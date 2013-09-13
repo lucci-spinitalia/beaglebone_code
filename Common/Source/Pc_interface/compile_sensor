@@ -1,0 +1,5 @@
+#!/bin/bash
+SOURCE="/home/root/Common/Source"
+INCLUDE="/home/root/Common/Include"
+
+gcc -Wall $SOURCE/Pc_interface/sensor.c -o sensor.o -I$INCLUDE

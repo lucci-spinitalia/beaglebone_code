@@ -1,0 +1,14 @@
+[Unit]
+Description=Stand-Off Application
+Wants=avahi-daemon.socket dropbear.service multi-user.target
+After=avahi-daemon.socket dropbear.service syslog.target multi-user.target
+DefaultDependencies=no
+
+[Service]
+Type=simple
+Restart=always
+ExecStart=/usr/bin/centrale_controllo_stdof.o
+WorkingDirectory=/usr/bin
+
+[Install]
+WantedBy=multi-user.target

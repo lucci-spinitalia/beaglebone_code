@@ -1,0 +1,5 @@
+#!/bin/bash
+SOURCE="/home/root/Common/Source"
+INCLUDE="/home/root/Common/Include"
+
+gcc -Wall $SOURCE/Pc_interface/pc_interface_udp.c $SOURCE/Socket_udp/socket_udp.c -o pc_interface.o -I$INCLUDE

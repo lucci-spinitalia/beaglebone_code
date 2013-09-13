@@ -11,7 +11,6 @@
 
 #include "segway_udp_v2.h"
 
-#define SEGWAY_PARAM 85
 #define CRC_ADJUSTMENT 0xA001
 #define CRC_TABLE_SIZE 256
 #define INITIAL_CRC (0)
@@ -42,6 +41,8 @@ unsigned char segway_buffer_tx_full;
 unsigned char segway_buffer_tx_overrun;
 unsigned int segway_buffer_tx_data_count;
 
+volatile unsigned char segway_net_down = 1;
+
 int segway_open(int *socket, struct sockaddr_in *address, char *ip_address, int port)
 {
   // Init circular buffer
@@ -57,7 +58,10 @@ int segway_open(int *socket, struct sockaddr_in *address, char *ip_address, int 
   if(init_client(socket, address, ip_address, port) == -1)
 	return 0;
   else
+  {
+    segway_net_down = 0;
     return 1;
+  }
 }
 
 int segway_buffer_tx_get_space(void)
@@ -72,6 +76,9 @@ int segway_load_tx(struct udp_frame data)
     segway_buffer_tx_overrun = 1;
     return -1;
   }
+  
+  if(segway_net_down)
+    return 0;
 
   memcpy(&segway_buffer_tx[segway_buffer_tx_ptr_wr], &data, sizeof(struct udp_frame));
   
@@ -103,6 +110,8 @@ int segway_send(int segway_device, struct sockaddr_in *dest_address)
 
     if(bytes_sent > 0)
     {
+	  segway_net_down = 0;
+	  
       segway_buffer_tx_full = 0;
       segway_buffer_tx_data_count--;
       segway_buffer_tx_ptr_rd++;
@@ -112,6 +121,8 @@ int segway_send(int segway_device, struct sockaddr_in *dest_address)
       else if(segway_buffer_tx_ptr_rd > SEGWAY_BUFFER_SIZE)
         printf("Circular buffer critical error\n");
     }
+	else
+	  segway_net_down = 1;
   }
 
   if(segway_buffer_tx_data_count == 0)
@@ -214,14 +225,11 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
   //if(byte_sent <= 0)
   //  return -1;
 
-  //usleep(20000);
-
   // Enable feedback bitmap
   //printf("segway_configure_feedback enable\n");
   byte_sent = segway_configure_feedback(socket, address,
-					FAULT_STATUS_WORD_1|FAULT_STATUS_WORD_2|FAULT_STATUS_WORD_3|FAULT_STATUS_WORD_4|MCU_0_FAULT_STATUS|
-					MCU_1_FAULT_STATUS|MCU_2_FAULT_STATUS|MCU_3_FAULT_STATUS|OPERATIONAL_STATE|LINEAR_VEL_MPS,
-					LINEAR_POS_M|FRONT_BASE_BATT_1_SOC|FRONT_BASE_BATT_2_SOC|REAR_BASE_BATT_1_SOC|REAR_BASE_BATT_2_SOC|
+					OPERATIONAL_STATE|LINEAR_VEL_MPS|INERTIAL_Y_RATE_RPS|LINEAR_ACCEL_MPS2,
+					FRONT_BASE_BATT_1_SOC|FRONT_BASE_BATT_2_SOC|REAR_BASE_BATT_1_SOC|REAR_BASE_BATT_2_SOC|
 					FRONT_BASE_BATT_1_TEMP_DEGC|FRONT_BASE_BATT_2_TEMP_DEGC|REAR_BASE_BATT_1_TEMP_DEGC|REAR_BASE_BATT_2_TEMP_DEGC, 
 					NONE);
 
@@ -234,8 +242,6 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
 
   if(byte_sent <= 0)
     return -1;
-
-  //usleep(20000);
  
   // Set max acceleration
   //printf("segway_configure_max_acc\n");
@@ -244,16 +250,12 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
   if(byte_sent <= 0)
     return -1;
 
-  //usleep(20000);
-
   // Set max deceleration
   //printf("segway_configure_max_decel\n");
   byte_sent = segway_configure_max_decel(socket, address, 1/*MAX_DECELERATION*/);
 
   if(byte_sent <= 0)
     return -1;
-
-  //usleep(20000);
     
   // Set max acceleration
   //printf("segway_configure_max_dtz\n");
@@ -262,16 +264,12 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
   if(byte_sent <= 0)
     return -1;
 
-  //usleep(20000);
-
   // Set costdown
   //printf("segway_configure_coastdown\n");
   byte_sent = segway_configure_coastdown(socket, address, 1/*COASTDOWN_ACCEL*/);
 
   if(byte_sent <= 0)
     return -1;
-
-  //usleep(20000);
     
   // Set max turn rate
   //printf("segway_configure_max_turn_rate\n");
@@ -280,16 +278,12 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
   if(byte_sent <= 0)
     return -1;
 
-  //usleep(20000);
-
   // Set max turn accel
   //printf("segway_configure_max_turn_accel\n");
   byte_sent = segway_configure_max_turn_accel(socket, address, 1/*MAX_TURN_ACCEL*/);
 
   if(byte_sent <= 0)
     return -1;
-
-  //usleep(20000);
 
   // Set tire diameter
   //printf("segway_configure_tire_diameter\n");
@@ -298,16 +292,12 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
   if(byte_sent <= 0)
     return -1;
 
-  //usleep(20000);
-
   // Set wheel track width
   //printf("segway_configure_wheel_track\n");
   byte_sent = segway_configure_wheel_track_width(socket, address, WHEEL_TRACK_WIDTH);
 
   if(byte_sent <= 0)
     return -1;
-
-  //usleep(20000);
 
   // Set max
   //printf("segway_configure_ransmission_ratio\n");
@@ -316,12 +306,10 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
   if(byte_sent <= 0)
     return -1;
 
-  //usleep(20000);
-
   return 1;
 }
 
-int segway_read(int socket, union segway_union *segway_status)
+int segway_read(int socket, union segway_union *segway_status, __u8 *data)
 {
   int bytes_read;
   __u8 udfb_data[(SEGWAY_PARAM*4) + 3];
@@ -336,6 +324,10 @@ int segway_read(int socket, union segway_union *segway_status)
     //int i = 0;
     segway_config_update(udfb_data, segway_status);
 
+	if(data != NULL)
+	{
+	  memcpy(data, udfb_data, sizeof(udfb_data));
+	}
     //for(i = 0; i < bytes_read; i++)
     //printf("[%x]", udfb_data[i]);
 

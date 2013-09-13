@@ -4,6 +4,8 @@
 #include <linux/can.h>
 #include <linux/can/raw.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <net/if.h>
 
 // PF stands for Protocol Family
@@ -22,6 +24,17 @@
  */
 int can_init(int *socket_can, struct sockaddr_can *addr, struct ifreq *ifr, int loopback, int recv_own_msgs)
 {
+  char buffer[256];
+  
+  // Configure can interface
+  sprintf(buffer, "canconfig can0 bitrate 1000000 ctrlmode berr-reporting on");
+  if(system(buffer) < 0)
+    perror("configure can interface");
+	
+  sprintf(buffer, "canconfig can0 start");
+  if(system(buffer) < 0)
+    perror("starting can interface");	
+	
   // Create the socket
   *socket_can = socket(PF_CAN, SOCK_RAW, CAN_RAW);
 

@@ -20,4 +20,6 @@ int rs232_write(int rs232_device);
 int rs232_read(int rs232_device);
 int rs232_buffer_tx_get_space(void);
 int rs232_buffer_rx_get_space(void);
+int rs232_search_in_buffer(char *keyword);
+int rs232_check_last_char(char keyword);
 #endif

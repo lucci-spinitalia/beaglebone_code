@@ -224,7 +224,7 @@ int rs232_unload_rx(unsigned char *data)
     length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_rd);
 
   memcpy(data, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
-
+	
   rs232_buffer_rx_data_count -= length_to_write;
 
   if(rs232_buffer_rx_data_count == 0)
@@ -271,7 +271,6 @@ int rs232_read(int rs232_device)
 
       if(rs232_buffer_rx_ptr_wr == RS232_BUFFER_SIZE)
         rs232_buffer_rx_ptr_wr = 0;
-
     }
   }
 
@@ -324,7 +323,21 @@ int rs232_write(int rs232_device)
   return bytes_sent;
 }
 
+int rs232_search_in_buffer(char *keyword)
+{
+  if(strstr(rs232_buffer_rx, keyword) != NULL)
+    return 1;
+  else
+    return 0;
+}
 
+int rs232_check_last_char(char keyword)
+{
+  if(rs232_buffer_rx[rs232_buffer_rx_ptr_wr - 1] == keyword)
+    return 1;
+  else
+    return 0;
+}
 /******************* Example without using circular buffer***********************/
 /*int main()
 {

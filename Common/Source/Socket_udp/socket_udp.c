@@ -30,7 +30,7 @@ int init_server(int *net_socket, struct sockaddr_in *socket_addr, int portnumber
   return 0;
 }
 
-int init_client(int *net_socket, struct sockaddr_in *socket_addr, const char *addr, int portnumber)
+int init_client(int *net_socket, struct sockaddr_in *socket_addr, const char *dest_addr, int dest_portnumber)
 {
   *net_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
@@ -39,8 +39,35 @@ int init_client(int *net_socket, struct sockaddr_in *socket_addr, const char *ad
 
   bzero((char *)socket_addr, sizeof(*socket_addr));
   socket_addr->sin_family = AF_INET;
-  socket_addr->sin_addr.s_addr = inet_addr(addr);
-  socket_addr->sin_port = htons(portnumber);
+  socket_addr->sin_addr.s_addr = inet_addr(dest_addr);
+  socket_addr->sin_port = htons(dest_portnumber);
+
+  return 0;
+}
+
+int init_client2(int *net_socket, struct sockaddr_in *socket_addr, int src_portnumber, const char *dest_addr, int dest_portnumber)
+{
+  struct sockaddr_in source_addr;
+  
+  *net_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+  if(*net_socket < 0)
+    return -1;
+
+  // Init source
+  bzero((char *)&source_addr, sizeof(source_addr));
+  source_addr.sin_family = AF_INET;
+  source_addr.sin_port = htons(src_portnumber);
+  source_addr.sin_addr.s_addr = htonl(INADDR_ANY);
+
+  if(bind(*net_socket, (struct sockaddr *)&source_addr, sizeof(source_addr)) == -1)
+    return -1;
+	
+  // Init destination
+  bzero((char *)socket_addr, sizeof(*socket_addr));
+  socket_addr->sin_family = AF_INET;
+  socket_addr->sin_addr.s_addr = inet_addr(dest_addr);
+  socket_addr->sin_port = htons(dest_portnumber);
 
   return 0;
 }

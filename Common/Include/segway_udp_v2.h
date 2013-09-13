@@ -5,6 +5,8 @@
 #include "segway_config.h"
 #include "socket_udp.h"
 
+#define SEGWAY_PARAM 85
+
 /* MACRO */
 #define segway_configure_none(socket, dest_address, message_param)                (segway_configure_load(socket, dest_address, 0x00, message_param))
 #define segway_configure_max_vel(socket, dest_address, message_param)             (segway_configure_load(socket, dest_address, 0x01, convert_to_ieee754(message_param)))
@@ -49,13 +51,14 @@ struct udp_frame
 extern unsigned char segway_buffer_tx_empty;
 extern unsigned char segway_buffer_tx_full;
 extern unsigned char segway_buffer_tx_overrun;
+extern volatile unsigned char segway_net_down;
 
 extern float convert_to_float(__u32 value);
 extern void tk_crc_initialize(void);
 extern void tk_crc_compute_byte_buffer_crc(__u8 *byte_buffer, __u32 bytes_in_buffer);
 extern unsigned char tk_crc_byte_buffer_crc_is_valid(__u8 *byte_buffer, __u32 bytes_in_buffer);
 extern int segway_init(int , struct sockaddr_in *, union segway_union *segway_status);
-extern int segway_read(int socket, union segway_union *segway_status);
+extern int segway_read(int socket, union segway_union *segway_status, __u8 *data);
 extern int segway_motion_set(int socket, struct sockaddr_in *dest_address, float velocity, float yaw, int scale_value);
 extern int segway_configure_load(int socket, struct sockaddr_in *dest_address, __u32 message_id, __u32 message_param);
 extern void segway_config_update(__u8 *data, union segway_union *segway_status);

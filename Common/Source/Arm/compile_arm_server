@@ -1,0 +1,5 @@
+#!/bin/bash
+SOURCE="/home/root/Common/Source"
+INCLUDE="/home/root/Common/Include"
+
+gcc -Wall $SOURCE/Arm/arm_server.c -o arm_server.o -I$INCLUDE
