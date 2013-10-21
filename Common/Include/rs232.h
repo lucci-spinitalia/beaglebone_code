@@ -1,6 +1,8 @@
 #ifndef __RS232_H_
 #define __RS232_H_
 
+#include <linux/types.h>
+
 #define RS232_BUFFER_SIZE 65536
 #define RS232_MAX_TX_LENGTH 1024
 

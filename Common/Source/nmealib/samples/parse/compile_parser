@@ -1,0 +1,6 @@
+#!/bin/bash
+
+SOURCE=../../src
+INCLUDE=../../include
+
+gcc -Wall main.c $SOURCE/*.c -I $INCLUDE -lm -o parser.o

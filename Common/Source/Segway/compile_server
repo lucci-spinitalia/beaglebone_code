@@ -1,5 +1,5 @@
 #!/bin/bash
-SOURCE="/home/root/Common/Source"
-INCLUDE="/home/root/Common/Include"
+SOURCE="/root/Common/Source"
+INCLUDE="/root/Common/Include"
 
 gcc -Wall $SOURCE/Segway/segway_server.c $SOURCE/Segway/segway_udp.c $SOURCE/Segway/segway_config.c -o segway_server.o -I$INCLUDE

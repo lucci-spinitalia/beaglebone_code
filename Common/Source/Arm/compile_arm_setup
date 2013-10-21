@@ -1,0 +1,5 @@
+#!/bin/bash
+SOURCE="/home/root/Common/Source"
+INCLUDE="/home/root/Common/Include"
+
+gcc -Wall $SOURCE/Arm/arm_setup.c $SOURCE/Arm/arm_udp.c $SOURCE/Joystick/joystick.c $SOURCE/Socket_udp/socket_udp.c -o arm_setup.o -I$INCLUDE -lm

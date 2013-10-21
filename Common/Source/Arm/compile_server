@@ -1,0 +1,5 @@
+#!/bin/bash
+SOURCE="/root/Common/Source"
+INCLUDE="/root/Common/Include"
+
+gcc -Wall $SOURCE/Arm/arm_server.c $SOURCE/Socket_udp/socket_udp.c -o arm_server.o -I$INCLUDE

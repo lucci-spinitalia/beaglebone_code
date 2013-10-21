@@ -3,7 +3,9 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-#define SYS_5V 38
+#define SYS_5V 44
+#define SYS_ENABLE 45
+
 volatile int STOP = 0;
 
 int main()
@@ -16,7 +18,7 @@ int main()
   
   // set gpio as input pulled down
   printf("Setting gpio as input\n");
-  sprintf(buf, "echo 27 > /sys/kernel/debug/omap_mux/gpmc_ad6");
+  sprintf(buf, "echo 27 > /sys/kernel/debug/omap_mux/gpmc_ad12");
   if(system(buf) < 0)
     perror("setting gpio as input");
   
@@ -26,9 +28,25 @@ int main()
   if(system(buf) < 0)
     perror("export gpio");
 	
+  // set gpio as output
+  printf("Setting gpio as input\n");
+  sprintf(buf, "echo 17 > /sys/kernel/debug/omap_mux/gpmc_ad13");
+  if(system(buf) < 0)
+    perror("setting gpio as output");
+  
+  // export gpio
+  printf("Export gpio\n");
+  sprintf(buf, "echo %i > /sys/class/gpio/export", SYS_ENABLE);
+  if(system(buf) < 0)
+    perror("export gpio");
 
   select_timeout.tv_sec = 0;
   select_timeout.tv_usec = 500000;
+
+  // Enable battery
+  sprintf(buf, "echo 1 > /sys/class/gpio/gpio%i/value", SYS_ENABLE);
+  if(system(buf) < 0)
+    perror("enable power");
 	
   while(STOP == 0)
   {

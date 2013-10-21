@@ -1,7 +1,7 @@
 [Unit]
 Description=Main Power Monitor
 Wants=multi-user.target
-After=multi-user.target 
+After=multi-user.target
 DefaultDependecies=no
 
 [Service]

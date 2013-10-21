@@ -1,0 +1,20 @@
+var searchData=
+[
+  ['rtb_5factive',['RTB_active',['../lucci_r_t_b_8c.html#aaba4ff9c624855c9c1cb062b32b3ad9c',1,'lucciRTB.c']]],
+  ['rtb_5fcomplete',['RTB_complete',['../lucci_r_t_b_8c.html#a3bb446028e9e6cd7f6b913f31f1c2128',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fangular_5fmultiplier',['RTB_internal_angular_multiplier',['../lucci_r_t_b_8c.html#ab0b34276659af26c5c4042b940d48c95',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fcounter',['RTB_internal_counter',['../lucci_r_t_b_8c.html#af9649c87998deaf9394a0edcb629395d',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fdecimator',['RTB_internal_decimator',['../lucci_r_t_b_8c.html#a71daa037081252fd247dd0d84314ce42',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fdistance',['RTB_internal_distance',['../lucci_r_t_b_8c.html#ad2d5a125474b6b0c15e28a7a9626873b',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fdistance_5fthreshold',['RTB_internal_distance_threshold',['../lucci_r_t_b_8c.html#a89e3e608a7607eb35972d818e10b4e96',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5finitialized',['RTB_internal_initialized',['../lucci_r_t_b_8c.html#a40fa645b4a40a3a307bf23d7f9f81a0a',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5flongitudinal_5fmultiplier',['RTB_internal_longitudinal_multiplier',['../lucci_r_t_b_8c.html#a03cad3139139701ef8825c7b6f208a01',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fpoint_5factual',['RTB_internal_point_actual',['../lucci_r_t_b_8c.html#a3fb3962a77966e1b2810180691cc0b40',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fpoint_5flast',['RTB_internal_point_last',['../lucci_r_t_b_8c.html#a489dd0158c34cf301e69bc7d36806fc4',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fpoint_5fnext',['RTB_internal_point_next',['../lucci_r_t_b_8c.html#a5a59086d6bc37d0e66062d6dd4f92484',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fpoint_5fprevious',['RTB_internal_point_previous',['../lucci_r_t_b_8c.html#a5d5c94f5051e99a357cdd215e5328f27',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fpoint_5fstart',['RTB_internal_point_start',['../lucci_r_t_b_8c.html#a6283dc4df5430f9f6aa11609bfa285ff',1,'lucciRTB.c']]],
+  ['rtb_5finternal_5fprevious_5fspeed',['RTB_internal_previous_speed',['../lucci_r_t_b_8c.html#a002529188364ee5f8dfd98667a6adda1',1,'lucciRTB.c']]],
+  ['rtb_5freset',['RTB_reset',['../lucci_r_t_b_8c.html#aa6a825d7aa20bc28a3010567f62d9df7',1,'lucciRTB.c']]],
+  ['rtbstatus',['RTBstatus',['../lucci_o_a_8c.html#a82c94e8fea83327122da48f0a719a00b',1,'RTBstatus():&#160;lucciOA.c'],['../lucci_r_t_b_8c.html#a82c94e8fea83327122da48f0a719a00b',1,'RTBstatus():&#160;lucciRTB.c']]]
+];

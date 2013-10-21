@@ -176,6 +176,7 @@
 union segway_union
 {
   __u32 segway_feedback[86];
+  __u8 segway_feedback_u8[86 * 4];
 
   struct
   {
@@ -271,6 +272,7 @@ union segway_union
 };
 
 extern __u32 convert_to_ieee754(float value);
+extern float convert_to_float(__u32 value);
 extern int segway_config_decode_arch_fault(__u32, char *);
 extern int segway_config_decode_critical_fault(__u32, char *);
 extern int segway_config_decode_comm_fault(__u32, char *);

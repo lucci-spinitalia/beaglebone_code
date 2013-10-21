@@ -1,5 +1,5 @@
 [Unit]
-Description=Stand-Off Application
+Description=Pc Interface Application
 Wants=avahi-daemon.socket dropbear.service multi-user.target
 After=avahi-daemon.socket dropbear.service syslog.target multi-user.target
 DefaultDependencies=no
@@ -7,7 +7,7 @@ DefaultDependencies=no
 [Service]
 Type=simple
 Restart=always
-ExecStart=/usr/bin/centrale_controllo_stdof.o
+ExecStart=/usr/bin/progetto_cbrn.o
 WorkingDirectory=/usr/bin
 
 [Install]

@@ -53,7 +53,6 @@ extern unsigned char segway_buffer_tx_full;
 extern unsigned char segway_buffer_tx_overrun;
 extern volatile unsigned char segway_net_down;
 
-extern float convert_to_float(__u32 value);
 extern void tk_crc_initialize(void);
 extern void tk_crc_compute_byte_buffer_crc(__u8 *byte_buffer, __u32 bytes_in_buffer);
 extern unsigned char tk_crc_byte_buffer_crc_is_valid(__u8 *byte_buffer, __u32 bytes_in_buffer);

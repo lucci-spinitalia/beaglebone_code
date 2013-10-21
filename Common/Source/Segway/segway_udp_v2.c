@@ -191,12 +191,12 @@ int segway_configure_load(int socket, struct sockaddr_in *dest_address, __u32 me
 
   //This address is 0x501 in little-endian
   frame.param.udp_id = 0x0105;
-
+  
   // I need to store the previouse value as little-endian, so I use the gcc builtin
   // function __builtin_bswap32  // 
   message_id = __builtin_bswap32(message_id);
   message_param = __builtin_bswap32(message_param);
-
+  
   memcpy(frame.param.data, &message_id, sizeof(__u32));
   memcpy(&frame.param.data[4], &message_param, sizeof(__u32));
 
@@ -228,7 +228,7 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
   // Enable feedback bitmap
   //printf("segway_configure_feedback enable\n");
   byte_sent = segway_configure_feedback(socket, address,
-					OPERATIONAL_STATE|LINEAR_VEL_MPS|INERTIAL_Y_RATE_RPS|LINEAR_ACCEL_MPS2,
+					OPERATIONAL_STATE|LINEAR_VEL_MPS|INERTIAL_Z_RATE_RPS|LINEAR_ACCEL_MPS2,
 					FRONT_BASE_BATT_1_SOC|FRONT_BASE_BATT_2_SOC|REAR_BASE_BATT_1_SOC|REAR_BASE_BATT_2_SOC|
 					FRONT_BASE_BATT_1_TEMP_DEGC|FRONT_BASE_BATT_2_TEMP_DEGC|REAR_BASE_BATT_1_TEMP_DEGC|REAR_BASE_BATT_2_TEMP_DEGC, 
 					NONE);
@@ -238,28 +238,28 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
 
   // Set max velocity
   //printf("segway_configure_max_vel\n");
-  byte_sent = segway_configure_max_vel(socket, address, 1/*MAX_VELOCITY*/);
+  byte_sent = segway_configure_max_vel(socket, address, 0.5/*MAX_VELOCITY*/);
 
   if(byte_sent <= 0)
     return -1;
  
   // Set max acceleration
   //printf("segway_configure_max_acc\n");
-  byte_sent = segway_configure_max_acc(socket, address, 1/*MAX_ACCELERATION*/);
+  byte_sent = segway_configure_max_acc(socket, address, 0.2/*MAX_ACCELERATION*/);
 
   if(byte_sent <= 0)
     return -1;
 
   // Set max deceleration
   //printf("segway_configure_max_decel\n");
-  byte_sent = segway_configure_max_decel(socket, address, 1/*MAX_DECELERATION*/);
+  byte_sent = segway_configure_max_decel(socket, address, 0.2/*MAX_DECELERATION*/);
 
   if(byte_sent <= 0)
     return -1;
     
   // Set max acceleration
   //printf("segway_configure_max_dtz\n");
-  byte_sent = segway_configure_max_dtz(socket, address, 1/*MAX_DTZ_DECEL_RATE*/);
+  byte_sent = segway_configure_max_dtz(socket, address, 0.2/*MAX_DTZ_DECEL_RATE*/);
 
   if(byte_sent <= 0)
     return -1;
@@ -326,7 +326,7 @@ int segway_read(int socket, union segway_union *segway_status, __u8 *data)
 
 	if(data != NULL)
 	{
-	  memcpy(data, udfb_data, sizeof(udfb_data));
+	  memcpy(data, udfb_data, bytes_read);
 	}
     //for(i = 0; i < bytes_read; i++)
     //printf("[%x]", udfb_data[i]);
