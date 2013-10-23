@@ -580,7 +580,7 @@ int arm_move(struct wwvi_js_event jse, __u16 joy_max_value)
       query_link = last_link_queried;
 	  
 	  // If it's a smartmotor
-	  if(query_link <= 6)
+	  if(query_link < MOTOR_NUMBER)
 	  {
         arm_set_command_without_value(query_link, "RPA");
 		arm_link[query_link - 1].request_actual_position = 1;
