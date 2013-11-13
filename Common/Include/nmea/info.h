@@ -99,6 +99,13 @@ typedef struct _nmeaINFO
     double  direction;  /**< Track angle in degrees True */
     double  declination; /**< Magnetic variation degrees (Easterly var. subtracts from true course) */
 
+    double magnetic_sensor_heading; /**< Magnetic sensor heading [degree] */
+    double magnetic_sensor_deviation; /**< Magnetic sensor deviation in EDEG - +/-[degree] */
+    double magnetic_sensor_variation; /**< Magnetic sensor variation in EDEG - +/-[degree] */
+    double rate_turn;                 /**< Rate of turn [degree/minute] */
+    double pitch_osc;                 /**< Oscillation of vessel about its latitudinal axis [degree] */
+    double roll_osc;                  /**< Oscillation of vessel about its longitudinal axis [degree] */
+    
     nmeaSATINFO satinfo; /**< Satellites information */
 
 } nmeaINFO;

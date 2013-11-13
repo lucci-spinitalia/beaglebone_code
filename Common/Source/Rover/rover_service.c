@@ -1,4 +1,4 @@
-#include "lucciSERVICE.h"
+#include "rover_service.h"
 
 RTB_FLOAT_TYPE lucciSERVICE_rad2degnorth(RTB_FLOAT_TYPE angle)
 {
@@ -33,11 +33,23 @@ RTBvector lucciSERVICE_vect_normalize (RTBvector data)
     RTB_FLOAT_TYPE accum;
     RTBvector local = data;
     accum = sqrt(pow(data.x,2)+pow(data.y,2));
-    local.x = data.x/accum;
-    local.y = data.y/accum;
-    local.norm = sqrt(pow(local.x,2)+pow(local.y,2));
-    local.angle_rad = atan2(local.y, local.x);
-    local.angle_deg_north = lucciSERVICE_rad2degnorth(local.angle_rad);
+    
+    if(accum > 0)
+    {
+      local.x = data.x/accum;
+      local.y = data.y/accum;
+      local.norm = sqrt(pow(local.x,2)+pow(local.y,2));
+      local.angle_rad = atan2(local.y, local.x);
+      local.angle_deg_north = lucciSERVICE_rad2degnorth(local.angle_rad);
+    }
+    else
+    {
+      local.x = 0;
+      local.y = 0;
+      local.norm = 0;
+      local.angle_rad = 0;
+      local.angle_deg_north = lucciSERVICE_rad2degnorth(local.angle_rad);
+    }
     return local;    
 }
 

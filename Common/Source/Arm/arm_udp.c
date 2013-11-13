@@ -296,12 +296,12 @@ int actuator_set_command(long command)
 	  //printf("ACTUATOR STOP\n");
       sprintf(buffer.frame, "$t%c%c", 0x0d, 0);
 	  break;
-	
+
 	case 1: //open
 	  //printf("ACTUATOR OPENING\n");
 	  sprintf(buffer.frame, "$a%c%c", 0x0d, 0);
 	  break;
-	  
+
 	case 2: //close
       //printf("ACTUATOR CLOSING\n");
       sprintf(buffer.frame, "$c%c%c", 0x0d, 0);
@@ -475,32 +475,46 @@ int arm_stop(int index)
         query_link = index;
       
       //Send stop command
-	  arm_link[query_link - 1].request_trajectory_status = 1;
+      arm_link[query_link - 1].request_trajectory_status = 1;
 
-	  //printf("Send trajectory request to %i\n", query_link);
-	  
-	  if(query_link == MOTOR_NUMBER)
-	  {
+      //printf("Send trajectory request to %i\n", query_link);
+  
+      if(query_link == MOTOR_NUMBER)
+      {
         actuator_set_command(0);
-		actuator_request_trajectory();
+          actuator_request_trajectory();
       }
       else
       {
         if(arm_set_command_without_value(index, "X") <= 0) //slow motion to stop
           return -1;
-		  
+  
         arm_set_command_without_value(query_link, "RB(0,2)");
       }
     }
     else
       request_time--;  //enter again here if i can't send the message due query_link != -1
   }
-  else if((request_time > (timeout_index + 3)) || (query_link == -1)) // if the message has been received or timeout accured
+  else if(request_time > (timeout_index + 3))
   {
+    // If timeout accurred increment timeout flag up to 100
+    if(arm_link[query_link - 1].request_timeout < 100)
+    {
+      arm_link[query_link - 1].request_timeout++;
+      printf("Link %i Timout number %i\n", query_link, arm_link[query_link - 1].request_timeout);
+    }
+    
     arm_link[query_link - 1].request_trajectory_status = 0;
+    
+    // if I obtain too much timeout then consider motor off
+    if(arm_link[query_link - 1].request_timeout  > 10)
+      arm_link[query_link - 1].trajectory_status = 0;
+    
     request_time = 0;
     query_link = -1;
   }
+  else if(query_link == -1)
+    request_time = 0;
   
   return 0;
 }
@@ -578,32 +592,46 @@ int arm_move(struct wwvi_js_event jse, __u16 joy_max_value)
     {
       //Get position (Get_enc_pos with RPA)
       query_link = last_link_queried;
-	  
-	  // If it's a smartmotor
-	  if(query_link < MOTOR_NUMBER)
-	  {
+  
+      // If it's a smartmotor
+      if(query_link < MOTOR_NUMBER)
+      {
         arm_set_command_without_value(query_link, "RPA");
-		arm_link[query_link - 1].request_actual_position = 1;
+        arm_link[query_link - 1].request_actual_position = 1;
       }
-	  else
-	  {
-	    actuator_request_trajectory();
+      else
+      {
+        actuator_request_trajectory();
         arm_link[query_link - 1].request_trajectory_status= 1;
       }
     }
     else
       request_time--;
   }
-  else if((request_time > (timeout_index + 3)) || (query_link == -1)) // if the message has been received or timeout accured
+  else if(request_time > (timeout_index + 3)) // if the message has been received or timeout accured
   {
+    // If timeout accurred increment timeout flag up to 100
+    if(arm_link[query_link - 1].request_timeout < 100)
+    {
+      arm_link[query_link - 1].request_timeout++;
+      printf("Link %i Timout number %i\n", query_link, arm_link[query_link - 1].request_timeout);
+    }
+    
+    // check if is a motor or the actuator
     if(query_link < MOTOR_NUMBER)
       arm_link[query_link - 1].request_actual_position = 0;
-	else
-	  arm_link[query_link - 1].request_trajectory_status = 0;
-	  
+    else
+      arm_link[query_link - 1].request_trajectory_status = 0;
+
+    // if I obtain too much timeout then consider motor off
+    if(arm_link[query_link - 1].request_timeout  > 10)
+      arm_link[query_link - 1].trajectory_status = 0;
+    
     request_time = 0;
     query_link = -1;
   }
+  else if(query_link == -1)
+    request_time = 0;
     
   return bytes_sent;
 }
@@ -655,9 +683,14 @@ int arm_homing_check()
   static int last_link_queried = 0;
   static int request_time = 0;
   const int timeout_index = 1;
+  int link_count;
   
   if(link_homing_complete == (pow(2, MOTOR_NUMBER) - 1))
   {
+    // reset timeout flags
+    for(link_count = 0; link_count < MOTOR_NUMBER; link_count++)
+      arm_link[link_count].request_timeout = 0;
+
     // read the next target. If there's not other one, then send homing complete message
     if(arm_automatic_motion_start(NULL) < 1)
       return 1;
@@ -674,12 +707,39 @@ int arm_homing_check()
       if(last_link_queried > MOTOR_NUMBER)
         last_link_queried = 1;
 
+      // Check if the link is active, otherwise stop motion
+      if(arm_link[last_link_queried - 1].request_timeout > 10)
+      {
+        link_homing_complete = (int)(pow(2, MOTOR_NUMBER) - 1);
+        printf("Timeout accurred for link %i\n", last_link_queried);
+      }
+      
       // if the homing for a link has been completed, then pass to the next link 
       while(link_homing_complete & (int)pow(2, last_link_queried - 1))
       {
+        // Checking for homing complete again. This is must be done due to the change in link_homing_complete
+        // by timeout condition
+        if(link_homing_complete == (pow(2, MOTOR_NUMBER) - 1))
+        {
+          // reset timeout flags
+          for(link_count = 0; link_count < MOTOR_NUMBER; link_count++)
+            arm_link[link_count].request_timeout = 0;
+
+          // read the next target. If there's not other one, then send homing complete message
+          if(arm_automatic_motion_start(NULL) < 1)
+            return 1;
+        }
+        
         last_link_queried++;
         if(last_link_queried > MOTOR_NUMBER)
           last_link_queried = 1;
+
+        // Check if the link is active
+        if(arm_link[last_link_queried - 1].request_timeout > 10)
+        {
+          link_homing_complete = (int)(pow(2, MOTOR_NUMBER) - 1);
+          printf("Timeout accurred for link %i\n", last_link_queried);
+        }
       }
       //printf("Query link %i, homing complete: %i\n", last_link_queried, link_homing_complete);
       query_link = last_link_queried;
@@ -692,21 +752,35 @@ int arm_homing_check()
       }
       else
       {
-        arm_link[query_link - 1].request_trajectory_status= 1;
+        arm_link[query_link - 1].request_trajectory_status = 1;
         actuator_request_trajectory();
       }
     }
   }
-  else if((request_time > (timeout_index + 3)) || (query_link == -1)) // if the message has been received or timeout accured
+  else if(request_time > (timeout_index + 3)) // if the message has been received or timeout accured
   {
+    // If timeout accurred increment timeout flag up to 100
+    if(arm_link[query_link - 1].request_timeout < 100)
+    {
+      arm_link[query_link - 1].request_timeout++;
+      printf("Link %i Timout number %i\n", query_link, arm_link[query_link - 1].request_timeout);
+    }
+    
+    // check if is a motor or the actuator
     if(query_link < MOTOR_NUMBER)
       arm_link[query_link - 1].request_actual_position = 0;
-	else
-	  arm_link[query_link - 1].request_trajectory_status = 0;
+    else
+      arm_link[query_link - 1].request_trajectory_status = 0;
 
+    // if I obtain too much timeout then consider motor off
+    if(arm_link[query_link - 1].request_timeout  > 10)
+      arm_link[query_link - 1].trajectory_status = 0;
+    
     request_time = 0;
     query_link = -1;
   }
+  else if(query_link == -1)
+    request_time = 0;
   
   return 0;
 }

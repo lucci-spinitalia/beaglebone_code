@@ -16,7 +16,7 @@ extern "C" {
 #include <stdlib.h>
 #include <assert.h>
 #include <sys/param.h>
-#include "lucciSERVICE.h"
+#include "rover_service.h"
 
 /** \defgroup ReturnToBase*/
 
@@ -86,7 +86,7 @@ extern "C" {
  * @see RTB_SAVE_DIST_TRSH
  * @see RTB_SAVE_DIST_ADAPTIVE_LONGITUDINAL
  */
-#define RTB_SAVE_DIST_ADAPTIVE_MAX_SPEED    2.0 //in meters per second
+#define RTB_SAVE_DIST_ADAPTIVE_MAX_SPEED    0.5 //in meters per second: was 2.0
 
 /** \brief RTB Record-mode adaptive saving distance, minimum speed
  *
@@ -96,7 +96,7 @@ extern "C" {
  * @see RTB_SAVE_DIST_TRSH
  * @see RTB_SAVE_DIST_ADAPTIVE_LONGITUDINAL
  */
-#define RTB_SAVE_DIST_ADAPTIVE_MIN_SPEED    0.2 //in meters per second
+#define RTB_SAVE_DIST_ADAPTIVE_MIN_SPEED    0.0 //in meters per second: was 0.2
 
 
 /** \brief RTB Record-mode adaptive saving distance, angular sensitivity
@@ -160,7 +160,7 @@ extern "C" {
  * @see RTB_GEO_MODE_EUCLIDEAN
  * @see RTB_GEO_MODE_LATLON
  */    
-#define RTB_GEO_MODE                RTB_GEO_MODE_EUCLIDEAN
+#define RTB_GEO_MODE                RTB_GEO_MODE_LATLON
     
     
 /** \brief RTB generalized Earth radius in Km
@@ -213,9 +213,9 @@ void RTB_set_mode(RTB_mode);
  * @return a pointer to the current status
  * @see RTB_status, RTB_GEO_MODE
  */
-void RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed);
+int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed);
 
-#if (RTB_GEO_MODE == RTB_GEO_MODE_EUCLIDEAN)
+//#if (RTB_GEO_MODE == RTB_GEO_MODE_EUCLIDEAN)
 
 /** @struct RTB_point
  *  @brief Waypoint struct (Cartesian)
@@ -237,7 +237,7 @@ typedef struct RTB_point{
     
 } RTB_point;
 
-#elif (RTB_GEO_MODE == RTB_GEO_MODE_LATLON)
+//#elif (RTB_GEO_MODE == RTB_GEO_MODE_LATLON)
 
 /** @struct RTB_point
  *  @brief Waypoint struct (Lat/Lon)
@@ -252,7 +252,7 @@ typedef struct RTB_point{
  *  @var RTB_point::previous
  *  Member 'previous' contains a pointer to the previous waypoint (nearer to the origin).
  */
-typedef struct RTB_point{
+/*typedef struct RTB_point{
     RTB_FLOAT_TYPE lat;
     RTB_FLOAT_TYPE lon;
     RTB_FLOAT_TYPE distance_from_start;
@@ -263,18 +263,18 @@ typedef struct RTB_point{
 
 #else
 #error ("No geo mode specified in lucciRTB.h")
-#endif
+#endif*/
 
 /**
  * @brief Debug define. Set to 1 to enable.
  * \ingroup ReturnToBase  
  */
-#define DEBUG   0
+#define DEBUG   1
 
 /**
  * @brief Simulator define. Set to 1 to enable.
  * \ingroup ReturnToBase  
- * This requires Player 3 and Stage 4 to be installed on the system.
+ * 
  */
 #define SIMUL   0
 

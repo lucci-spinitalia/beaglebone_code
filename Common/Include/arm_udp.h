@@ -25,7 +25,7 @@ struct arm_frame
       {
         struct
         {
-          char index;
+          unsigned char index;
           char command[63];
         } arm_command_param;
 
@@ -52,6 +52,7 @@ struct arm_info
   // this flag tell which request has been sent to the arm
   __u8 request_actual_position;
   __u8 request_trajectory_status;
+  __u8 request_timeout;
 };
 
 extern unsigned char arm_buffer_tx_empty;

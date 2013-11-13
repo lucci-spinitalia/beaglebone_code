@@ -19,22 +19,22 @@ int main(int argc, char *argv[])
 {
   int it = 0;
   int done = 0;
-    
+
   nmeaINFO info;
   nmeaPARSER parser;
-    
+
   int select_result = -1; // value returned frome select()
   struct timeval select_timeout;
   int nfds = 0;
   fd_set rset;
-    
+
   char rs232_device;
   int bytes_read;
   char rs232_buffer[1024];
   char *token;
   char nmea_message[256];
 
-  rs232_device = com_open("/dev/ttyO2", 9600, 'N', 8, 1);
+  rs232_device = com_open("/dev/ttyO2", 4800, 'N', 8, 1);
   
   if(rs232_device < 0)
     perror("com_open");
@@ -77,7 +77,7 @@ int main(int argc, char *argv[])
     if(rs232_device > 0)
     {
       FD_SET(rs232_device, &rset);
-	  nfds = max(nfds, rs232_device);
+      nfds = max(nfds, rs232_device);
     }
     
     select_result = select(nfds + 1, &rset, NULL, NULL, NULL);
@@ -120,24 +120,76 @@ int main(int argc, char *argv[])
   
                 if(it > 0)
                 {
-                  printf("\033[14A");
+                  printf("\033[21A");
                 }
                 else
                   it++;
       
-                printf("Time: %i/%i/%i %i:%i:%i.%i\n", info.utc.day, info.utc.mon + 1, info.utc.year + 1900, info.utc.hour, info.utc.min, info.utc.sec, info.utc.hsec);
-                printf("Signal: %i\n", info.fix);
-                printf("Position Diluition of Precision: %f\n", info.PDOP);
-                printf("Horizontal Diluition of Precision: %f\n", info.HDOP);
-                printf("Vertical Diluition of Precisione: %f\n", info.VDOP);
-                printf("Latitude: %f\n", info.lat);
-                printf("Longitude: %f\n", info.lon);
-                printf("Elevation: %f m\n", info.elv);
-                printf("Speed: %f km/h\n", info.speed);
-                printf("Direction: %f degrees\n", info.direction);
-                printf("Magnetic variation degrees: %f\n", info.declination); 
+                printf("Time: %i/%i/%i %i:%i:%i.%i                    \n", info.utc.day, info.utc.mon + 1, info.utc.year + 1900, info.utc.hour, info.utc.min, info.utc.sec, info.utc.hsec);
+                
+                if(info.smask == GPGGA)
+                {
+                  switch(info.sig)
+                  {
+                    case 0:
+                      printf("Signal: INVALID                    \n");
+                      break;
+                    case 1:
+                      printf("Signal: FIX                    \n");
+                      break;
+                    case 2:
+                      printf("Signal: DIFFERENTIAL                    \n");
+                      break;
+                    case 3:
+                      printf("Signal: SENSITIVE                    \n");
+                      break;
+                    default:
+                      printf("Signal: INVALID                    \n");
+                      break;
+                  }
+                }
+                else
+                  printf("Signal: NOT AVAILABLE                    \n");
+                
+                if(info.smask == GPGGA)
+                {
+                  switch(info.fix)
+                  {
+                    case 1:
+                      printf("Operating mode: FIX NOT AVAILABLE                    \n");
+                      break;
+                    case 2:
+                      printf("Operating mode: 2D                    \n");
+                      break;
+                    case 3:
+                      printf("Operating mode: 3D                    \n");
+                      break;
+                    default:
+                      printf("Operating mode: UNKNOWN                    \n");
+                      break;
+                  }
+                }
+                else
+                  printf("Opearating mode: NOT AVAILABLE                    \n");
+
+                printf("Position Diluition of Precision: %f                    \n", info.PDOP);
+                printf("Horizontal Diluition of Precision: %f                    \n", info.HDOP);
+                printf("Vertical Diluition of Precisione: %f                    \n", info.VDOP);
+                printf("Latitude: %f                    \n", info.lat);
+                printf("Longitude: %f                    \n", info.lon);
+                printf("Elevation: %f m                    \n", info.elv);
+                printf("Speed: %f km/h                    \n", info.speed);
+                printf("Direction: %f degrees                    \n", info.direction);
+                printf("Magnetic variation degrees: %f                    \n", info.declination); 
     
-                printf("\nSatellite: \tin view: %i\n\t\tin use: %i\n", info.satinfo.inview, info.satinfo.inuse);
+                printf("Magnetic sensor heading: %f                    \n", info.magnetic_sensor_heading);
+                printf("Magnetic sensor deviation: %f                    \n", info.magnetic_sensor_deviation);
+                printf("Magnetic sensor variation: %f                    \n", info.magnetic_sensor_variation);
+                printf("Rate turn: %f                    \n", info.rate_turn);
+                printf("Pitch oscillation: %f                    \n", info.pitch_osc);
+                printf("Roll oscillation: %f                    \n", info.roll_osc);
+
+                printf("\nSatellite: \tin view: %i\n\t\tin use: %i                    \n", info.satinfo.inview, info.satinfo.inuse);
       
                 token = strtok(NULL, "\n");
               }

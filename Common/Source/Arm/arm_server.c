@@ -23,7 +23,7 @@
 
 unsigned int gear[] = {220, 880, 220, 70, 256, 256};
 
-void print_status(long *position, long *velocity_target, char *command, unsigned char *brake_status, unsigned char *timeout_status, 
+void print_status(long *position, long *velocity_target, char command[][256], unsigned char *brake_status, unsigned char *timeout_status, 
 		  unsigned char *mode)
 {
   static unsigned char init = 0;
@@ -38,7 +38,7 @@ void print_status(long *position, long *velocity_target, char *command, unsigned
   
   for(i = 0; i < MOTOR_NUMBER; i++)
   {
-    printf("Link %i Position:%15ld Velocity:%15ld Command: %s      ", i + 1, position[i], velocity_target[i], command);
+    printf("Link %i Position:%15ld Velocity:%15ld Command: %s      ", i + 1, position[i], velocity_target[i], command[i]);
 //    printf("Link %i Position:%15ld Velocity:%15ld Command: %s      \n", 3, position[2], velocity_target[2], command);
     
     if(mode[i] != MODE_VELOCITY)
@@ -91,6 +91,8 @@ int main(int argc, char**argv)
   unsigned char mode[MOTOR_NUMBER];
   unsigned char trajectory_status[MOTOR_NUMBER];
   
+  char *arm_token_result;
+  
   if(argc != 3)  
   {
     printf("usage: %s <IP address> <Port>\n", argv[0]);
@@ -105,8 +107,11 @@ int main(int argc, char**argv)
   servaddr.sin_port = htons(atoi(argv[2]));
 
   if(bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) == -1)
+  {
     perror("bind");
-
+    return 1;
+  }
+  
   bzero(position, sizeof(position));
   bzero(velocity_target, sizeof(velocity_target));
   bzero(c, sizeof(c));
@@ -114,6 +119,7 @@ int main(int argc, char**argv)
   bzero(timeout_status, sizeof(timeout_status));
   bzero(trajectory_status, sizeof(trajectory_status));
   bzero(mode, sizeof(mode));
+  bzero(mesg.frame, sizeof(mesg.frame));
   
   printf("Arm server started. . .\n");
 
@@ -161,179 +167,265 @@ int main(int argc, char**argv)
           continue;
         }
 
-        mesg.param.arm_command_param.index -= 128;
+        // Every message from arm must ends with \r
+        arm_token_result = strchr(mesg.param.arm_command, 13);
+        
+        if(arm_token_result == NULL)
+          continue;
+
+        *arm_token_result = '\0';  // translate token in null character
+
+        if(mesg.param.arm_command_param.index >= 128)
+        {
+          mesg.param.arm_command_param.index -= 128;
     
-        if(memcmp(mesg.param.arm_command_param.command, "RPA", sizeof("RPA") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-            continue;
+          if(memcmp(mesg.param.arm_command_param.command, "RPA", sizeof("RPA") - 1) == 0)
+          {
+            if(mesg.param.arm_command_param.index == 0)
+              continue;
  
-          memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("RPA") - 1);
-	  sprintf(tx_buffer.frame, "%ld%c%c", position[(unsigned char)mesg.param.arm_command_param.index - 1], 13, 0);
+            memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("RPA") - 1);
+            last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("RPA")] = '\0';
 
-          if(sendto(sockfd, tx_buffer.frame, strlen(tx_buffer.frame), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) == -1)
-            perror("sendto");
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "VT=", sizeof("VT=") - 1) == 0)
-        {
+            sprintf(tx_buffer.frame, "%ld%c%c", position[(unsigned char)mesg.param.arm_command_param.index - 1], 13, 0);
+ 
+            if(sendto(sockfd, tx_buffer.frame, strlen(tx_buffer.frame), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) == -1)
+              perror("sendto");
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "VT=", sizeof("VT=") - 1) == 0)
+          {
+   
+            if(mesg.param.arm_command_param.index == 0)
+            {
+              for(i = 0; i < MOTOR_NUMBER; i++)
+              {
+                memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("VT=") - 1);
+                last_command[i][sizeof("VT=")] = '\0';
+              
+                velocity_target[i] = atol(&mesg.param.arm_command_param.command[sizeof("VT=") - 1]);
+              }
+            }
+            else
+            {
+              memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("VT=") - 1);
+              last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("VT=")] = '\0';
+
+              velocity_target[(unsigned char)mesg.param.arm_command_param.index - 1] = atol(&mesg.param.arm_command_param.command[sizeof("VT=") - 1]);
+            }
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "c=", sizeof("c=") - 1) == 0)
+          {
+            if(mesg.param.arm_command_param.index == 0)
+            {
+              for(i = 0; i < MOTOR_NUMBER; i++)
+              {
+                memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("c=") - 1);
+                last_command[i][sizeof("c=")] = '\0';
+
+                c[i] = atoi(&mesg.param.arm_command_param.command[sizeof("c=") - 1]);
+                timeout_status[i] = 0;
+              }
+            }
+            else
+            {
+              memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("c=") - 1);
+              last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("c=")] = '\0';
+    
+              c[(unsigned char)mesg.param.arm_command_param.index - 1] = atol(&mesg.param.arm_command_param.command[sizeof("c=") - 1]);
+              timeout_status[(unsigned char)mesg.param.arm_command_param.index - 1] = 0;
+            }
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "G", sizeof("G") - 1) == 0)
+          {
+            if(mesg.param.arm_command_param.index == 0)
+            {
+              for(i = 0; i < MOTOR_NUMBER; i++)
+              {
+                memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("G") - 1);
+                last_command[i][sizeof("G")] = '\0';
+            
+                go[i] = 1;
+              }
+            }
+            else
+            {
+              memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("G") - 1);
+              last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("G")] = '\0';
+
+              go[(unsigned char)mesg.param.arm_command_param.index - 1] = 1;
+            }
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "BRKSRV", sizeof("BRKSRV") - 1) == 0)
+          {
+            if(mesg.param.arm_command_param.index == 0)
+            {
+              for(i = 0; i < MOTOR_NUMBER; i++)
+	      {
+	        memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("BRKSRV") - 1);
+                last_command[i][sizeof("BRKSRV")] = '\0';
+
+                brksrv[i] = 1;
+              }
+            }
+            else
+            {
+              memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("BRKSRV") - 1);
+              last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("BRKSRV")] = '\0';
+            
+              brksrv[(unsigned char)mesg.param.arm_command_param.index - 1] = 1;
+            }
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "MV", sizeof("MV") - 1) == 0)
+          {
+            if(mesg.param.arm_command_param.index == 0)
+            {
+              for(i = 0; i < MOTOR_NUMBER; i++)
+              {
+                memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("MV") - 1);
+                last_command[i][sizeof("MV")] = '\0';
+                mode[i] = MODE_VELOCITY;
+              }
+            }
+            else
+            {
+              memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("MV") - 1);
+              last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("MV")] = '\0';
+            
+              mode[(unsigned char)mesg.param.arm_command_param.index - 1] = MODE_VELOCITY;
+            }
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "MP", sizeof("MP") - 1) == 0)
+          {
+            if(mesg.param.arm_command_param.index == 0)
+            {
+              for(i = 0; i < MOTOR_NUMBER; i++)
+              {
+                memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("MP") - 1);
+                last_command[i][sizeof("MP")] = '\0';
+                mode[i] = MODE_POSITION;
+              }
+            }
+            else
+            {
+              memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("MP") - 1);
+              last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("MP")] = '\0';
+            
+              mode[(unsigned char)mesg.param.arm_command_param.index - 1] = MODE_POSITION;
+            }
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "OFF", sizeof("OFF") - 1) == 0)
+          {
+            if(mesg.param.arm_command_param.index == 0)
+            {
+              for(i = 0; i < MOTOR_NUMBER; i++)
+              {
+                memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("OFF") - 1);
+                last_command[i][sizeof("OFF")] = '\0';
+              
+                if(brksrv[i] == 1)
+                  brake_status[i] = 1;
+              }
+            }
+            else
+            {
+              memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("OFF") - 1);
+              last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("OFF")] = '\0';
+              
+              if(brksrv[(unsigned char)mesg.param.arm_command_param.index - 1] == 1)
+                brake_status[(unsigned char)mesg.param.arm_command_param.index - 1] = 1;
+            }
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "RB(0,2)", sizeof("RB(0,2)") - 1) == 0)
+          {
+            if(mesg.param.arm_command_param.index == 0)
+              continue;
   
-          if(mesg.param.arm_command_param.index == 0)
-          {
-            for(i = 0; i < MOTOR_NUMBER; i++)
-	    {
-	      memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("VT=") - 1);
-              velocity_target[i] = atol(&mesg.param.arm_command_param.command[sizeof("VT=") - 1]);
-	    }
-          }
-          else
-	  {
-	    memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("VT=") - 1);
-            velocity_target[(unsigned char)mesg.param.arm_command_param.index - 1] = atol(&mesg.param.arm_command_param.command[sizeof("VT=") - 1]);
-	  }
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "c=", sizeof("c=") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-          {
-            for(i = 0; i < MOTOR_NUMBER; i++)
-	    {
-	      memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("c=") - 1);
-              c[i] = atoi(&mesg.param.arm_command_param.command[sizeof("c=") - 1]);
-              timeout_status[i] = 0;
-	    }
-          }
-          else
-	  {
-	    memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("c=") - 1);
-            c[(unsigned char)mesg.param.arm_command_param.index - 1] = atol(&mesg.param.arm_command_param.command[sizeof("c=") - 1]);
-            timeout_status[(unsigned char)mesg.param.arm_command_param.index - 1] = 0;
-	  }
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "G", sizeof("G") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-          {
-            for(i = 0; i < MOTOR_NUMBER; i++)
-	    {
-	      memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("G") - 1);
-              go[i] = 1;
-	    }
-          }
-          else
-	  {
-	    memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("G") - 1);
-            go[(unsigned char)mesg.param.arm_command_param.index - 1] = 1;
-	  }
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "BRKSRV", sizeof("BRKSRV") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-          {
-            for(i = 0; i < MOTOR_NUMBER; i++)
-	    {
-	      memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("BRKSRV") - 1);
-              brksrv[i] = 1;
-	    }
-          }
-          else
-	  {
-	    memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("BRKSRV") - 1);
-            brksrv[(unsigned char)mesg.param.arm_command_param.index - 1] = 1;
-	  }
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "MV", sizeof("MV") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-          {
-            for(i = 0; i < MOTOR_NUMBER; i++)
-	    {
-	      memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("MV") - 1);
-              mode[i] = MODE_VELOCITY;
-	    }
-          }
-          else
-	  {
-	    memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("MV") - 1);
-            mode[(unsigned char)mesg.param.arm_command_param.index - 1] = MODE_VELOCITY;
-	  }
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "MP", sizeof("MP") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-          {
-            for(i = 0; i < MOTOR_NUMBER; i++)
-            {
-              memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("MP") - 1);
-              mode[i] = MODE_POSITION;
-            }
-          }
-          else
-          {
-            memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("MP") - 1);
-            mode[(unsigned char)mesg.param.arm_command_param.index - 1] = MODE_POSITION;
-          }
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "OFF", sizeof("OFF") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-          {
-            for(i = 0; i < MOTOR_NUMBER; i++)
-            {
-              memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("OFF") - 1);
+            memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("RB(0,2)") - 1);
+            last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("RB(0,2)")] = '\0';
+    
+            sprintf(tx_buffer.frame, "%u%c%c", trajectory_status[(unsigned char)mesg.param.arm_command_param.index - 1], 13, 0);
 
-              if(brksrv[i] == 1)
-                brake_status[i] = 1;
-            }
+            //printf("Motor%i trajectory status: %u\n", (unsigned char)mesg.param.arm_command_param.index - 1,  trajectory_status[(unsigned char)mesg.param.arm_command_param.index - 1]);
+            if(sendto(sockfd, tx_buffer.frame, strlen(tx_buffer.frame), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) == -1)
+              perror("sendto");
           }
-          else
+          else if(memcmp(mesg.param.arm_command_param.command, "X", sizeof("X") - 1) == 0)
           {
-            memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("OFF") - 1);
-     
-            if(brksrv[(unsigned char)mesg.param.arm_command_param.index - 1] == 1)
-              brake_status[(unsigned char)mesg.param.arm_command_param.index - 1] = 1;
-          }
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "RB(0,2)", sizeof("RB(0,2)") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-            continue;
-  
-          memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("RB(0,2)") - 1);
-          sprintf(tx_buffer.frame, "%u%c%c", trajectory_status[(unsigned char)mesg.param.arm_command_param.index - 1], 13, 0);
-
-          //printf("Motor%i trajectory status: %u\n", (unsigned char)mesg.param.arm_command_param.index - 1,  trajectory_status[(unsigned char)mesg.param.arm_command_param.index - 1]);
-          if(sendto(sockfd, tx_buffer.frame, strlen(tx_buffer.frame), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) == -1)
-            perror("sendto");
-        }
-        else if(memcmp(mesg.param.arm_command_param.command, "X", sizeof("X") - 1) == 0)
-        {
-          if(mesg.param.arm_command_param.index == 0)
-          {
-            for(i = 0; i < MOTOR_NUMBER; i++)
+            if(mesg.param.arm_command_param.index == 0)
             {
-              memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("X") - 1);
-       
-              trajectory_status[i] = 0; //trajectory done
-              velocity_target[i] = 0;
-              go[i] = 0;
+              for(i = 0; i < MOTOR_NUMBER; i++)
+              {
+                memcpy(&(last_command[i][0]), mesg.param.arm_command_param.command, sizeof("X") - 1);
+                last_command[i][sizeof("X")] = '\0';
+      
+                trajectory_status[i] = 0; //trajectory done
+                velocity_target[i] = 0;
+                go[i] = 0;
+              }
+            }
+            else
+            {      
+              memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("X") - 1);
+              last_command[(unsigned char)mesg.param.arm_command_param.index - 1][sizeof("X")] = '\0';
+ 
+              trajectory_status[(unsigned char)mesg.param.arm_command_param.index - 1] = 0; //trajectory done
+              velocity_target[(unsigned char)mesg.param.arm_command_param.index - 1] = 0;
+              go[(unsigned char)mesg.param.arm_command_param.index - 1] = 0;
             }
           }
-          else
-          {     
-            memcpy(&(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), mesg.param.arm_command_param.command, sizeof("X") - 1);
-            trajectory_status[(unsigned char)mesg.param.arm_command_param.index - 1] = 0; //trajectory done
-            velocity_target[(unsigned char)mesg.param.arm_command_param.index - 1] = 0;
-            go[(unsigned char)mesg.param.arm_command_param.index - 1] = 0;
-          }
+          
+          continue;
         }
-        //else 
-        //  printf("Received %s message\n", mesg.param.arm_command_param.command);
-        continue;
+        else if(mesg.param.arm_command_param.index == '$')
+        {
+          if(memcmp(mesg.param.arm_command_param.command, "t", sizeof("t") - 1) == 0)
+          {
+            //printf("Command: %s\n",   mesg.param.arm_command_param.command);  
+            memcpy(&(last_command[MOTOR_NUMBER - 1][0]), mesg.param.arm_command_param.command, sizeof("t") - 1);
+            last_command[MOTOR_NUMBER - 1][sizeof("t")] = '\0';
+            
+            trajectory_status[MOTOR_NUMBER - 1] = 0; //trajectory done
+            velocity_target[MOTOR_NUMBER - 1] = 0;
+            go[MOTOR_NUMBER - 1] = 0;
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "a", sizeof("a") - 1) == 0)
+          {
+            //printf("Command: %s\n",   mesg.param.arm_command_param.command);  
+            memcpy(&(last_command[MOTOR_NUMBER - 1][0]), mesg.param.arm_command_param.command, sizeof("a") - 1);
+            last_command[MOTOR_NUMBER - 1][sizeof("a")] = '\0';
+          
+            go[MOTOR_NUMBER - 1] = 1;
+            velocity_target[MOTOR_NUMBER - 1] = 1;
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "c", sizeof("c") - 1) == 0)
+          {
+            //printf("Command: %s\n",   mesg.param.arm_command_param.command);  
+            memcpy(&(last_command[MOTOR_NUMBER - 1][0]), mesg.param.arm_command_param.command, sizeof("c") - 1);
+            last_command[MOTOR_NUMBER - 1][sizeof("c")] = '\0';
+          
+            go[MOTOR_NUMBER - 1] = 1;
+            velocity_target[MOTOR_NUMBER - 1] = -1;
+          }
+          else if(memcmp(mesg.param.arm_command_param.command, "?", sizeof("?") - 1) == 0)
+          {
+            memcpy(&(last_command[MOTOR_NUMBER - 1][0]), mesg.param.arm_command_param.command, sizeof("?") - 1);
+            last_command[MOTOR_NUMBER - 1][sizeof("?")] = '\0';
+          
+            sprintf(tx_buffer.frame, "%u%c%c", trajectory_status[MOTOR_NUMBER - 1], 13, 0);
+
+            //printf("Motor%i trajectory status: %u\n", (unsigned char)mesg.param.arm_command_param.index - 1,  trajectory_status[(unsigned char)mesg.param.arm_command_param.index - 1]);
+            if(sendto(sockfd, tx_buffer.frame, strlen(tx_buffer.frame), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) == -1)
+              perror("sendto");
+          }
+          //else 
+          //  printf("Received %s message\n", mesg.param.arm_command_param.command);
+          continue;
+        }
       }
     }
     
     /* Timeout */
-    for(i = 0; i < MOTOR_NUMBER; i++)
+    for(i = 0; i < (MOTOR_NUMBER - 1); i++)
     {
       if((go[i] == 1) && (mode[i] == MODE_VELOCITY))
       {
@@ -343,12 +435,36 @@ int main(int argc, char**argv)
 
         //printf("Motor Velocity %i %f\n", i, motor_velocity_rev_sec[i]);
         //n_step =  SAMPLE_RATE / t_step = SAMPLE_RATE / ((1/4000)/vel)
-        position_step = (SAMPLE_RATE_US * motor_velocity_rev_sec[i]) / 250;
+        position_step = ((double)SAMPLE_RATE_US * motor_velocity_rev_sec[i]) / 250;
         position_temp[i] += position_step;
         position[i] = (long)position_temp[i];
 //        if(i == 2)
 //          printf("Position calculated: %ld\n", position[i]);
-
+      }
+    }
+    
+    // Code for actuator
+    if(go[MOTOR_NUMBER - 1])
+    {
+      trajectory_status[MOTOR_NUMBER - 1] = 1; //trajectory in progress
+      
+      // I want take 5 seconds before reach the ends
+      // 40000 is an arbitrary number that emulate an encorder
+      position_temp[MOTOR_NUMBER - 1] += ((double)SAMPLE_RATE_US / 5000000) * 40000 * velocity_target[MOTOR_NUMBER - 1];  
+      position[MOTOR_NUMBER - 1] = (long)position_temp[MOTOR_NUMBER - 1];
+      
+      // velocity target indicates the actuator's direction
+      if((velocity_target[MOTOR_NUMBER - 1] > 0) && (position[MOTOR_NUMBER - 1] >= 40000))
+      {
+        trajectory_status[MOTOR_NUMBER - 1] = 0; //trajectory done
+        velocity_target[MOTOR_NUMBER - 1] = 0;
+        go[MOTOR_NUMBER - 1] = 0;
+      }
+      else if((velocity_target[MOTOR_NUMBER - 1] < 0) && (position[MOTOR_NUMBER - 1] <= 0))
+      {
+        trajectory_status[MOTOR_NUMBER - 1] = 0; //trajectory done
+        velocity_target[MOTOR_NUMBER - 1] = 0;
+        go[MOTOR_NUMBER - 1] = 0;
       }
     }
     
@@ -358,23 +474,22 @@ int main(int argc, char**argv)
     if(timeout_check_c >= (int)(100000/SAMPLE_RATE_US)) // 100 ms
     {
       timeout_check_c = 0;
-      for(i = 0; i < MOTOR_NUMBER; i++)
+      for(i = 0; i < (MOTOR_NUMBER - 1); i++)
       {
-	c[i]++;
-	
+        c[i]++;
+
         if(c[i] >= 5)
         {
-	  c[i] = 0;
-	  timeout_status[i] = 1;
-	  if(mode[i] == MODE_VELOCITY)
+          c[i] = 0;
+          timeout_status[i] = 1;
+          if(mode[i] == MODE_VELOCITY)
             velocity_target[i] = 0;
 
           trajectory_status[i] = 0; //trajectory done
         }
       }
       
-      print_status(position, velocity_target, &(last_command[(unsigned char)mesg.param.arm_command_param.index - 1][0]), brake_status, timeout_status,
-                     mode);
+      print_status(position, velocity_target, last_command, brake_status, timeout_status, mode);
     }
     
     

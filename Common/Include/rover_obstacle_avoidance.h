@@ -16,7 +16,7 @@ extern "C" {
 #include <malloc.h>
 #include <math.h>
 #include <sys/param.h>
-#include "lucciSERVICE.h"
+#include "rover_service.h"
 
 /** \defgroup ObstacleAvoidance */
     

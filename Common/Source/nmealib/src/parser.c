@@ -85,13 +85,14 @@ int nmea_parse(
 
     NMEA_ASSERT(parser && parser->buffer);
 
+    // Analyze buffer and take info into parser
     nmea_parser_push(parser, buff, buff_sz);
 
     while(GPNON != (ptype = nmea_parser_pop(parser, &pack)))
     {
         nread++;
 
-        switch(ptype)
+        switch(ptype)  // ADD: call function to add info parsed here
         {
         case GPGGA:
             nmea_GPGGA2info((nmeaGPGGA *)pack, info);
@@ -107,6 +108,15 @@ int nmea_parse(
             break;
         case GPVTG:
             nmea_GPVTG2info((nmeaGPVTG *)pack, info);
+            break;
+        case HCHDG:
+            nmea_HCHDG2info((nmeaHCHDG *)pack, info);
+            break;
+        case TIROT:
+            nmea_TIROT2info((nmeaTIROT *)pack, info);
+            break;
+        case YXXDR:
+            nmea_YXXDR2info((nmeaYXXDR *)pack, info);
             break;
         };
 
@@ -145,6 +155,8 @@ int nmea_parser_real_push(nmeaPARSER *parser, const char *buff, int buff_sz)
     /* parse */
     for(;;node = 0)
     {
+        // return number of byte to packet tail. If find an invalid trailer or and invalid crc return 0.
+        // if it is a valid message the function return > 0 with a crc >= 0
         sen_sz = nmea_find_tail(
             (const char *)parser->buffer + nparsed,
             (int)parser->buff_use - nparsed, &crc);
@@ -169,7 +181,7 @@ int nmea_parser_real_push(nmeaPARSER *parser, const char *buff, int buff_sz)
 
             node->pack = 0;
 
-            switch(ptype)
+            switch(ptype)  // ADD: add packet type case here
             {
             case GPGGA:
                 if(0 == (node->pack = malloc(sizeof(nmeaGPGGA))))
@@ -231,6 +243,46 @@ int nmea_parser_real_push(nmeaPARSER *parser, const char *buff, int buff_sz)
                     node = 0;
                 }
                 break;
+
+            case HCHDG:
+              if(0 == (node->pack = malloc(sizeof(nmeaHCHDG))))
+                goto mem_fail;
+              node->packType = HCHDG;
+              if(!nmea_parse_HCHDG(
+                (const char *)parser->buffer + nparsed,
+                sen_sz, (nmeaHCHDG *)node->pack))
+              {
+                  free(node);
+                  node = 0;
+              }
+              break;
+
+            case TIROT:
+              if(0 == (node->pack = malloc(sizeof(nmeaTIROT))))
+                goto mem_fail;
+              node->packType = TIROT;
+              if(!nmea_parse_TIROT(
+                (const char *)parser->buffer + nparsed,
+                sen_sz, (nmeaTIROT *)node->pack))
+              {
+                  free(node);
+                  node = 0;
+              }
+              break;
+
+            case YXXDR:
+              if(0 == (node->pack = malloc(sizeof(nmeaYXXDR))))
+                goto mem_fail;
+              node->packType = YXXDR;
+              if(!nmea_parse_YXXDR(
+                (const char *)parser->buffer + nparsed,
+                sen_sz, (nmeaYXXDR *)node->pack))
+              {
+                  free(node);
+                  node = 0;
+              }
+              break;
+	      
             default:
                 free(node);
                 node = 0;

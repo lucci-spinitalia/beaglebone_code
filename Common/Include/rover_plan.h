@@ -12,8 +12,8 @@
 extern "C" {
 #endif
 
-#include "lucciRTB.h"
-#include "lucciSERVICE.h"
+#include "rover_rtb.h"
+#include "rover_service.h"
 #include <math.h>
 
     /** \defgroup Plan */

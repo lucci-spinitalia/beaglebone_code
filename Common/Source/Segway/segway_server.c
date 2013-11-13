@@ -67,14 +67,17 @@ void send_param_message(int sockfd, struct sockaddr_in *cliaddr, __u32 bitmap1_m
 {
   union segway_union bitmap;
   __u32 bitmap_count = 0;
+  int bytes_sent = 0;
   int i;
 
+  bzero(&bitmap, sizeof(bitmap));
+  
   for(i = 0; i < 32; i++)
   {
     if(((bitmap1_mask >> i) & 0x01) == 1)
     { 
       bitmap.segway_feedback[bitmap_count] = __builtin_bswap32(segway_param.segway_feedback[i]);
-      //printf("bitmap[%i][%i] = %lu\n", bitmap_count, i, bitmap.segway_feedback[bitmap_count]);
+      //printf("bitmap[%i][%i] = %08lx\n", bitmap_count, i, bitmap.segway_feedback[bitmap_count]);
       bitmap_count++;
     }
   }
@@ -102,8 +105,12 @@ void send_param_message(int sockfd, struct sockaddr_in *cliaddr, __u32 bitmap1_m
   tk_crc_compute_byte_buffer_crc(bitmap.segway_feedback_u8, ((bitmap_count + 1) * 4));
   //printf("crc[%i] = %lu, [%i] = %lu\n", bitmap_count, bitmap.segway_feedback[bitmap_count], bitmap_count + 1, bitmap.segway_feedback[bitmap_count + 1]);
 
-  if(sendto(sockfd, bitmap.segway_feedback, (bitmap_count + 1), 0, (struct sockaddr *)cliaddr, sizeof(*cliaddr)) == -1)
+  //printf("Vel: %f\n", convert_to_float(segway_param.list.linear_vel_mps) );
+  
+  bytes_sent = sendto(sockfd, bitmap.segway_feedback, (bitmap_count + 1) * sizeof(__u32), 0, (struct sockaddr *)cliaddr, sizeof(*cliaddr));
+  if(bytes_sent == -1)
     perror("sendto"); 
+  
 }
 
 int main(int argc, char**argv)
@@ -128,9 +135,13 @@ int main(int argc, char**argv)
   __u8 message[(SEGWAY_PARAM*4) + 3];
   __u32 uvel = 0;
   __u32 uyaw = 0;
+  __u32 umax_vel = 0;
+  __u32 umax_yaw_rate = 0;
   
   float vel = 0;
   float yaw = 0;
+  float max_vel = MAX_VEL_MPS;
+  float max_yaw_rate = MAX_YAW_RPS;
 
   if(argc != 3)  
   {
@@ -157,8 +168,8 @@ int main(int argc, char**argv)
 
   tk_crc_initialize();
 
-  select_timeout.tv_sec = SEGWAY_TIMEOUT_USEC;
-  select_timeout.tv_usec = 0;
+  select_timeout.tv_sec = 0;
+  select_timeout.tv_usec = SEGWAY_TIMEOUT_USEC;
   
   for(;;)
   {
@@ -198,8 +209,6 @@ int main(int argc, char**argv)
           perror("recvfrom");
           continue;
         }
-        
-        timeout_check = 0;
 
         if(tk_crc_byte_buffer_crc_is_valid(mesg.frame, sizeof(mesg.frame)) == 0)
         {
@@ -209,7 +218,9 @@ int main(int argc, char**argv)
      
         switch(__builtin_bswap32(mesg.param.udp_id << 16))
         {
-          case 0x500:          
+          case 0x500:    
+            timeout_check = 0;
+
             uvel = (mesg.param.data[0] << 24) | (mesg.param.data[1] << 16) | (mesg.param.data[2] << 8) | (mesg.param.data[3]);
             vel = convert_to_float(uvel);
             uyaw = (mesg.param.data[4] << 24) |(mesg.param.data[5] << 16) |(mesg.param.data[6] << 8) |(mesg.param.data[7]);
@@ -222,6 +233,20 @@ int main(int argc, char**argv)
             {
               case 0x00:  // None
                 break;
+
+              case 0x01: // Max Velocity
+                memcpy(&umax_vel, &mesg.param.data[4], sizeof(__u32));
+                segway_param.list.vel_limit_mps = __builtin_bswap32(umax_vel);
+                max_vel = convert_to_float(segway_param.list.vel_limit_mps);
+                //printf("Vel limit: %f\n", convert_to_float(segway_param.list.vel_limit_mps));
+                break;
+                
+              case 0x06:  // Max Yaw Rate
+                memcpy(&umax_yaw_rate, &mesg.param.data[4], sizeof(__u32));
+                segway_param.list.yaw_rate_limit_rps = __builtin_bswap32(umax_yaw_rate);
+                max_yaw_rate = convert_to_float(segway_param.list.yaw_rate_limit_rps);
+                //printf("Yaw limit: %f\n", convert_to_float(segway_param.list.yaw_rate_limit_rps));
+                break;   
 
               case 0x10: //configure bitmap 1
                 memcpy(&bitmap1_mask, &mesg.param.data[4], sizeof(__u32));
@@ -247,8 +272,8 @@ int main(int argc, char**argv)
                   case 0x04:
                     //printf("---->Requested Standby mode \n");
                     segway_param.list.operational_state = 0x03;
-		    vel = 0;
-		    yaw = 0;
+                    vel = 0;
+                    yaw = 0;
                     if(sendto(sockfd, message, sizeof(message), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) == -1)
                       perror("sendto");
                     break;
@@ -257,7 +282,7 @@ int main(int argc, char**argv)
                     //printf("---->Requested Tractor mode \n");
                     if(sendto(sockfd, message, sizeof(message), 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr)) == -1)
                       perror("sendto");
-		
+
                     segway_param.list.operational_state =  0x04;
                     break;          
                 }
@@ -283,11 +308,12 @@ int main(int argc, char**argv)
             break;
         }  //end switch
         
+        segway_param.list.linear_vel_mps = convert_to_ieee754(vel * max_vel);
+        segway_param.list.inertial_z_rate_rps = convert_to_ieee754(yaw * max_yaw_rate);
+        send_param_message(sockfd, &cliaddr, bitmap1_mask, bitmap2_mask, bitmap3_mask, segway_param);
+    
         print_status(segway_param.list.operational_state, convert_to_float(segway_param.list.linear_vel_mps), convert_to_float(segway_param.list.inertial_z_rate_rps));
     
-        segway_param.list.linear_vel_mps = convert_to_ieee754(vel * MAX_VEL_MPS);
-        segway_param.list.inertial_z_rate_rps = convert_to_ieee754(yaw * MAX_YAW_RPS);
-        send_param_message(sockfd, &cliaddr, bitmap1_mask, bitmap2_mask, bitmap3_mask, segway_param);
         continue;
       }
     }
@@ -297,10 +323,11 @@ int main(int argc, char**argv)
     {
       vel = 0;
       yaw = 0;
-      segway_param.list.linear_vel_mps = convert_to_ieee754(vel * MAX_VEL_MPS);
-      segway_param.list.inertial_z_rate_rps = convert_to_ieee754(yaw * MAX_YAW_RPS);
+      timeout_check = 0;
+      segway_param.list.linear_vel_mps = convert_to_ieee754(vel * max_vel);
+      segway_param.list.inertial_z_rate_rps = convert_to_ieee754(yaw * max_yaw_rate);
 
-      print_status(segway_param.list.operational_state, segway_param.list.linear_vel_mps, segway_param.list.inertial_z_rate_rps);
+      print_status(segway_param.list.operational_state, convert_to_float(segway_param.list.linear_vel_mps), convert_to_float(segway_param.list.inertial_z_rate_rps));
     }
     
     select_timeout.tv_sec = 0;

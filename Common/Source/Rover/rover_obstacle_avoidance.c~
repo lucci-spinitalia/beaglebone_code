@@ -1,12 +1,10 @@
 #if (SIMUL == 1)
-#include <player-3.1/libplayerc/playerc.h>
-extern playerc_graphics2d_t *PlayerLocalGraphicsMoving;
-
+#include "rtb_video.h"
 #endif
-#include "lucciOA.h"
+#include "rover_obstacle_avoidance.h"
+
 FILE *output_pty;
-extern char mystr[];
-extern RTB_status RTBstatus;
+RTB_status RTBstatus;
 
 
 typedef struct OA_radial_map_t {
@@ -25,16 +23,8 @@ unsigned int OA_radial_size;
 
 void OA_init (void)
 {
-    long i,j;
-    /*OA_map_size = 2* OA_ACTIVE_DISTANCE / OA_GRID_RESOLUTION;
-    OA_map = malloc(OA_map_size * sizeof(unsigned int*));
-    for (i=0; i<OA_map_size; i++)
-        OA_map[i] = malloc(OA_map_size * sizeof(unsigned int));
-    for (i=0;i<OA_map_size; i++)
-        for (j=0; j<OA_map_size; j++)
-        {
-            OA_map[i][j]=0;
-        }*/
+    long i;
+
     OA_internal_min_angle = OA_SENSOR_CENTER - OA_SENSOR_COUNT/2 * OA_SENSOR_RESOLUTION;
     OA_radial_size = (int)(360 / OA_GRID_RADIAL_SAMPLING);
     //OA_radial_map = (unsigned int *) malloc (OA_radial_size * sizeof(unsigned int));
@@ -142,7 +132,7 @@ RTBvector OA_perform_avoidance (RTB_FLOAT_TYPE readings[], long count, RTBvector
         if (_validity_count == OA_WINDOW_SIZE)
         {
             OA_radial_map[i].validity = 1;
-            long j;
+
             for (j=0;j<_validity_count-1;j++)
                 OA_radial_map[i-_validity_count+j+1].validity=1;
         }
@@ -165,22 +155,12 @@ RTBvector OA_perform_avoidance (RTB_FLOAT_TYPE readings[], long count, RTBvector
     }
 #endif    
     
-//    len=sprintf(mystr,"START,");
-//    write(output_pty,mystr,len);
-//
-//    for (i=0;i<OA_radial_size-1;i++)
-//    {
-//        len=sprintf(mystr,"%03d,",OA_radial_map[i].intensity);
-//        write(output_pty,mystr,len);
-//    }
-//    len=sprintf(mystr,"%03d,END\n\r",OA_radial_map[OA_radial_size].intensity);
-//    write(output_pty,mystr,len);
     fclose(output_pty);
     
     index = (long)floor(desired_heading.angle_deg_north/(OA_GRID_RADIAL_SAMPLING));
     if (OA_radial_map[index].validity != 1)
     {
-        long count_left=0, count_right=0, result;
+        long count_left=0, count_right=0;
         while((OA_radial_map[index-count_left].validity==0 && OA_radial_map[index+count_right].validity==0) && index-count_left>0 && index+count_right<OA_radial_size)
         {
             count_left++;
@@ -243,6 +223,7 @@ RTBvector OA_perform_avoidance (RTB_FLOAT_TYPE readings[], long count, RTBvector
         else
         {
             if (right_valid)
+            {
                 if (right_reached_end)
                 {
                     angle = lucciSERVICE_degnorth2rad(lucciSERVICE_deg_adjust((RTB_FLOAT_TYPE) 5 * (index + count_right - OA_radial_size) + 20));
@@ -251,20 +232,9 @@ RTBvector OA_perform_avoidance (RTB_FLOAT_TYPE readings[], long count, RTBvector
                 {
                     angle = lucciSERVICE_degnorth2rad(lucciSERVICE_deg_adjust((RTB_FLOAT_TYPE) 5 * (index + count_right) + 20));
                 }
+            }
         }
         
-        
-        /*result = MIN(count_left,count_right);
-        if (count_left > 0)
-            if (OA_radial_map[index-count_left].validity == 1)
-                control_values.heading = (RTB_FLOAT_TYPE)((index * 5) - 5 * (count_left+1));
-        if (result == count_right)
-            control_values.heading = (RTB_FLOAT_TYPE)((index * 5) + 5 * (count_right+1));
-        
-        if (control_values.heading < 0)
-            control_values.heading += 360;
-        if (control_values.heading > 360)
-            control_values.heading -= 360;*/
         
         localvec.x = cos(angle);
         localvec.y = sin(angle);
@@ -308,11 +278,9 @@ RTBvector OA_perform_avoidance (RTB_FLOAT_TYPE readings[], long count, RTBvector
 
 void OA_cleanup (void)
 {
-    long i, j;
+    long i;
     for (i=0;i<OA_map_size;i++)
     {
-        //for (j=OA_map_size;j>0;j--)
-            //free(OA_map[i][j]);
         free(OA_map[i]);
     }
     free(OA_map);

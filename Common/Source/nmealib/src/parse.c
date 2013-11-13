@@ -99,17 +99,20 @@ int _nmea_parse_time(const char *buff, int buff_sz, nmeaTIME *res)
  */
 int nmea_pack_type(const char *buff, int buff_sz)
 {
-    static const char *pheads[] = {
+    static const char *pheads[] = {  // ADD: add the new heads here
         "GPGGA",
         "GPGSA",
         "GPGSV",
         "GPRMC",
         "GPVTG",
+        "HCHDG",
+        "TIROT",
+        "YXXDR",
     };
 
     NMEA_ASSERT(buff);
 
-    if(buff_sz < 5)
+    if(buff_sz < 5)  // ADD: add new pack type here
         return GPNON;
     else if(0 == memcmp(buff, pheads[0], 5))
         return GPGGA;
@@ -121,6 +124,12 @@ int nmea_pack_type(const char *buff, int buff_sz)
         return GPRMC;
     else if(0 == memcmp(buff, pheads[4], 5))
         return GPVTG;
+    else if(0 == memcmp(buff, pheads[5], 5))
+        return HCHDG;
+    else if(0 == memcmp(buff, pheads[6], 5))
+        return TIROT;
+    else if(0 == memcmp(buff, pheads[7], 5))
+        return YXXDR;
 
     return GPNON;
 }
@@ -136,7 +145,7 @@ int nmea_find_tail(const char *buff, int buff_sz, int *res_crc)
 {
     static const int tail_sz = 3 /* *[CRC] */ + 2 /* \r\n */;
 
-    const char *end_buff = buff + buff_sz;
+    const char *end_buff = buff + buff_sz;  // EDIT: the end_buff can be a char instead a pointer to the last location of buffer
     int nread = 0;
     int crc = 0;
 
@@ -367,6 +376,101 @@ int nmea_parse_GPVTG(const char *buff, int buff_sz, nmeaGPVTG *pack)
     return 1;
 }
 
+
+/**
+ * \brief Parse HDG packet from buffer.
+ * @param buff a constant character pointer of packet buffer.
+ * @param buff_sz buffer size.
+ * @param pack a pointer of packet which will filled by function.
+ * @return 1 (true) - if parsed successfully or 0 (false) - if fail.
+ */
+int nmea_parse_HCHDG(const char *buff, int buff_sz, nmeaHCHDG *pack)
+{
+    NMEA_ASSERT(buff && pack);
+
+    memset(pack, 0, sizeof(nmeaHCHDG));
+
+    nmea_trace_buff(buff, buff_sz);
+
+    if(5 != nmea_scanf(buff, buff_sz,
+        "$HCHDG,%f,%f,%C,%f,%C*",
+        &(pack->mag_heading), &(pack->mag_deviation),
+        &(pack->ew_deviation), &(pack->mag_variation),
+        &(pack->ew_variation)))
+    {
+        nmea_error("HCHDG parse error!");
+        return 0;
+    }
+
+    return 1;
+}
+
+/**
+ * \brief Parse ROT packet from buffer.
+ * @param buff a constant character pointer of packet buffer.
+ * @param buff_sz buffer size.
+ * @param pack a pointer of packet which will filled by function.
+ * @return 1 (true) - if parsed successfully or 0 (false) - if fail.
+ */
+int nmea_parse_TIROT(const char *buff, int buff_sz, nmeaTIROT *pack)
+{
+    NMEA_ASSERT(buff && pack);
+
+    memset(pack, 0, sizeof(nmeaTIROT));
+
+    nmea_trace_buff(buff, buff_sz);
+
+    if(2 != nmea_scanf(buff, buff_sz,
+        "$TIROT,%f,%C*",
+        &(pack->rate), &(pack->status)))
+    {
+        nmea_error("TIROT parse error!");
+        return 0;
+    }
+
+    return 1;
+}
+
+/**
+ * \brief Parse XDR packet from buffer.
+ * @param buff a constant character pointer of packet buffer.
+ * @param buff_sz buffer size.
+ * @param pack a pointer of packet which will filled by function.
+ * @return 1 (true) - if parsed successfully or 0 (false) - if fail.
+ */
+int nmea_parse_YXXDR(const char *buff, int buff_sz, nmeaYXXDR *pack)
+{
+    NMEA_ASSERT(buff && pack);
+
+    memset(pack, 0, sizeof(nmeaYXXDR));
+
+    nmea_trace_buff(buff, buff_sz);
+
+    if(8 != nmea_scanf(buff, buff_sz,
+        "$YXXDR,%C,%f,%C,%s,%C,%f,%C,%s*",
+        &(pack->angular_pitch), &(pack->pitch),
+        &(pack->degrees_pitch), &(pack->pitch_id),
+        &(pack->angular_roll), &(pack->roll),
+        &(pack->degrees_roll), &(pack->roll_id)))
+    {
+        nmea_error("YXXDR parse error!");
+        return 0;
+    }
+
+    if( pack->angular_pitch != 'A' ||
+        pack->degrees_pitch != 'D' ||
+        memcmp(pack->pitch_id, "PTCH", 4) != 0 ||
+        pack->angular_roll != 'A' ||
+        pack->degrees_roll != 'D' ||
+        memcmp(pack->roll_id, "ROLL", 4) != 0
+      )
+    {
+        nmea_error("YXXDR parse error (format error)!");
+        return 0;
+    }
+    return 1;
+}
+
 /**
  * \brief Fill nmeaINFO structure by GGA packet data.
  * @param pack a pointer of packet structure.
@@ -498,4 +602,47 @@ void nmea_GPVTG2info(nmeaGPVTG *pack, nmeaINFO *info)
     info->declination = pack->dec;
     info->speed = pack->spk;
     info->smask |= GPVTG;
+}
+
+/**
+ * \brief Fill nmeaINFO structure by HCHDG packet data.
+ * @param pack a pointer of packet structure.
+ * @param info a pointer of summary information structure.
+ */
+void nmea_HCHDG2info(nmeaHCHDG *pack, nmeaINFO *info)
+{
+    NMEA_ASSERT(pack && info);
+
+    info->magnetic_sensor_heading = pack->mag_heading;
+    info->magnetic_sensor_deviation = ((pack->ew_deviation == 'E')?pack->mag_deviation:-(pack->mag_deviation));
+    info->magnetic_sensor_variation = ((pack->ew_variation == 'E')?pack->mag_variation:-(pack->mag_variation));
+}
+
+/**
+ * \brief Fill nmeaINFO structure by ROT packet data.
+ * @param pack a pointer of packet structure.
+ * @param info a pointer of summary information structure.
+ */
+void nmea_TIROT2info(nmeaTIROT *pack, nmeaINFO *info)
+{
+    NMEA_ASSERT(pack && info);
+
+    if('A' == pack->status)
+    {
+      info->rate_turn = pack->rate;
+    }
+
+}
+
+/**
+ * \brief Fill nmeaINFO structure by XDR packet data.
+ * @param pack a pointer of packet structure.
+ * @param info a pointer of summary information structure.
+ */
+void nmea_YXXDR2info(nmeaYXXDR *pack, nmeaINFO *info)
+{
+    NMEA_ASSERT(pack && info);
+
+    info->pitch_osc = pack->pitch;
+    info->roll_osc = pack->roll;
 }

@@ -61,6 +61,7 @@ extern int segway_read(int socket, union segway_union *segway_status, __u8 *data
 extern int segway_motion_set(int socket, struct sockaddr_in *dest_address, float velocity, float yaw, int scale_value);
 extern int segway_configure_load(int socket, struct sockaddr_in *dest_address, __u32 message_id, __u32 message_param);
 extern void segway_config_update(__u8 *data, union segway_union *segway_status);
+extern void segway_convert_param_message(union segway_union segway_param, __u8 *param_to_send, __u32 *size);
 int segway_configure_feedback(int socket, struct sockaddr_in *address, __u32 feedback1_param, __u32 feedback2_param, __u32 feedback3_param);
 int segway_configure_feedback3(int socket, struct sockaddr_in *address, __u32 message_param);
 int segway_configure_feedback2(int socket, struct sockaddr_in *address, __u32 message_param);

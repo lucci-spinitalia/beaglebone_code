@@ -22,6 +22,7 @@
 __u32 bitmap1;
 __u32 bitmap2;
 __u32 bitmap3;
+int bitmap_count = 0;
 
 static __u16 crc_table[CRC_TABLE_SIZE];
 
@@ -314,6 +315,8 @@ int segway_read(int socket, union segway_union *segway_status, __u8 *data)
   int bytes_read;
   __u8 udfb_data[(SEGWAY_PARAM*4) + 3];
 
+  memset(udfb_data, 0, sizeof(udfb_data));
+  
   if(socket < 0)
     return -1;
 
@@ -321,22 +324,73 @@ int segway_read(int socket, union segway_union *segway_status, __u8 *data)
 
   if(bytes_read > 0)
   {
-    //int i = 0;
-    segway_config_update(udfb_data, segway_status);
+    // discard message that I can't handle now
+    if(bytes_read == bitmap_count)
+    {
+      //int i = 0;
+      segway_config_update(udfb_data, segway_status);
 
-	if(data != NULL)
-	{
-	  memcpy(data, udfb_data, bytes_read);
-	}
-    //for(i = 0; i < bytes_read; i++)
-    //printf("[%x]", udfb_data[i]);
+      if(data != NULL)
+      {
+        memcpy(data, udfb_data, bytes_read);
+      }
 
-    //printf("\n");
+      /*for(i = 0; i < bytes_read; i++)
+        printf("[%x]", udfb_data[i]);
+
+      printf("\n");*/
+    }
   }
   else
     return -1;
 
   return bytes_read;
+}
+
+void segway_convert_param_message(union segway_union segway_param, __u8 *param_to_send, __u32 *size)
+{
+  union segway_union bitmap;
+  __u32 bitmap_count = 0;
+  int i;
+
+  bzero(&bitmap, sizeof(bitmap));
+  
+  for(i = 0; i < 32; i++)
+  {
+    if(((bitmap1 >> i) & 0x01) == 1)
+    { 
+      bitmap.segway_feedback[bitmap_count] = __builtin_bswap32(segway_param.segway_feedback[i]);
+      //printf("bitmap[%i][%i] = %08lx\n", bitmap_count, i, bitmap.segway_feedback[bitmap_count]);
+      bitmap_count++;
+    }
+  }
+
+  for(i = 0; i < 32; i++)
+  {
+    if(((bitmap2 >> i) & 0x01) == 1)
+    { 
+      bitmap.segway_feedback[bitmap_count] = __builtin_bswap32(segway_param.segway_feedback[i + 32]);
+      //printf("bitmap[%i][%i] = %lu\n", bitmap_count, i, bitmap.segway_feedback[bitmap_count]);
+      bitmap_count++;
+    }
+  }
+
+  for(i = 0; i < 32; i++)
+  {
+    if(((bitmap3 >> i) & 0x01) == 1)
+    { 
+       bitmap.segway_feedback[bitmap_count] = __builtin_bswap32(segway_param.segway_feedback[i + 64]);
+       //printf("bitmap[%i][%i] = %lu\n", bitmap_count, i, bitmap.segway_feedback[bitmap_count]);
+       bitmap_count++;
+    }
+  }
+        
+  tk_crc_compute_byte_buffer_crc(bitmap.segway_feedback_u8, ((bitmap_count + 1) * 4));
+  //printf("crc[%i] = %lu, [%i] = %lu\n", bitmap_count, bitmap.segway_feedback[bitmap_count], bitmap_count + 1, bitmap.segway_feedback[bitmap_count + 1]);
+
+  //printf("Vel: %f\n", convert_to_float(segway_param.list.linear_vel_mps) );
+  *size = (bitmap_count + 1) * sizeof(__u32);
+  memcpy(param_to_send, bitmap.segway_feedback, *size);
 }
 
 void segway_config_update(__u8 *udfb_data, union segway_union *segway_status)
@@ -348,8 +402,8 @@ void segway_config_update(__u8 *udfb_data, union segway_union *segway_status)
   {
     if((bitmap1 >> i) & 0x01)
     {
-      segway_status->segway_feedback[i] = (((udfb_data[count*4] << 24) & 0xFF000000) | ((udfb_data[count*4 + 1] << 16) & 0x00FF0000) | ((udfb_data[count*4 + 2] << 8) & 0x0000FF00) | (udfb_data[count*4 + 3] & 0x000000FF));
-      //printf("Sizeof(): %i Bitmap[%i]: %08lx\n", bitmap_count, i, segway_status->segway_feedback[i]);   
+      //segway_status->segway_feedback[i] = (((udfb_data[count*4] << 24) & 0xFF000000) | ((udfb_data[count*4 + 1] << 16) & 0x00FF0000) | ((udfb_data[count*4 + 2] << 8) & 0x0000FF00) | (udfb_data[count*4 + 3] & 0x000000FF));
+      segway_status->segway_feedback[i] = __builtin_bswap32(*((long *)&udfb_data[count*4]));
       count++;
     }
   }
@@ -358,8 +412,9 @@ void segway_config_update(__u8 *udfb_data, union segway_union *segway_status)
   {
     if((bitmap2 >> (i - 32)) & 0x01)
     {
-      segway_status->segway_feedback[i] = (((udfb_data[count*4] << 24) & 0xFF000000) | ((udfb_data[count*4 + 1] << 16) & 0x00FF0000) | ((udfb_data[count*4 + 2] << 8) & 0x0000FF00) | (udfb_data[count*4 + 3] & 0x000000FF));
-      //printf("Sizeof(): %i Bitmap[%i]: %08lx\n", bitmap_count, i, segway_status->segway_feedback[i]);   
+      //segway_status->segway_feedback[i] = (((udfb_data[count*4] << 24) & 0xFF000000) | ((udfb_data[count*4 + 1] << 16) & 0x00FF0000) | ((udfb_data[count*4 + 2] << 8) & 0x0000FF00) | (udfb_data[count*4 + 3] & 0x000000FF));
+      segway_status->segway_feedback[i] = __builtin_bswap32(*((long *)&udfb_data[count*4]));
+      //printf("Sizeof(): %i Bitmap[%i]: %08lx\n", count, i, segway_status->segway_feedback[i]);   
       count++;
     }
   }
@@ -368,11 +423,14 @@ void segway_config_update(__u8 *udfb_data, union segway_union *segway_status)
   {
     if((bitmap3 >> (i - 64)) & 0x01)
     {
-      segway_status->segway_feedback[i] = (((udfb_data[count*4] << 24) & 0xFF000000) | ((udfb_data[count*4 + 1] << 16) & 0x00FF0000) | ((udfb_data[count*4 + 2] << 8) & 0x0000FF00) | (udfb_data[count*4 + 3] & 0x000000FF));
-      //printf("Sizeof(): %i Bitmap[%i]: %08lx\n", bitmap_count, i, segway_status->segway_feedback[i]);   
+      //segway_status->segway_feedback[i] = (((udfb_data[count*4] << 24) & 0xFF000000) | ((udfb_data[count*4 + 1] << 16) & 0x00FF0000) | ((udfb_data[count*4 + 2] << 8) & 0x0000FF00) | (udfb_data[count*4 + 3] & 0x000000FF));
+      segway_status->segway_feedback[i] = __builtin_bswap32(*((long *)&udfb_data[count*4]));
+      //printf("Sizeof(): %i Bitmap[%i]: %08lx\n", count, i, segway_status->segway_feedback[i]);   
       count++;
     }
   }
+  
+  //printf("Velocity: %f             \n", convert_to_float(segway_status->list.linear_vel_mps));
 }
 
 int segway_configure_feedback1(int socket, struct sockaddr_in *address, __u32 message_param)
@@ -398,6 +456,29 @@ int segway_configure_feedback3(int socket, struct sockaddr_in *address, __u32 me
 
 int segway_configure_feedback(int socket, struct sockaddr_in *address, __u32 feedback1_param, __u32 feedback2_param, __u32 feedback3_param)
 { 
+  int param = feedback1_param;
+  
+  bitmap_count = 0;
+  while(param != 0)
+  {
+    bitmap_count++;
+    param = param >> 1;
+  }
+  
+  param = feedback2_param;
+  while(param != 0)
+  {
+    bitmap_count++;
+    param = param >> 1;
+  }
+  
+  param = feedback3_param;
+  while(param != 0)
+  {
+    bitmap_count++;
+    param = param >> 1;
+  }
+  
   if(segway_configure_feedback1(socket, address, feedback1_param) < 0)
     return -1;
 
