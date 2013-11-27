@@ -26,6 +26,7 @@ int nmea_parse_GPGSV(const char *buff, int buff_sz, nmeaGPGSV *pack);
 int nmea_parse_GPRMC(const char *buff, int buff_sz, nmeaGPRMC *pack);
 int nmea_parse_GPVTG(const char *buff, int buff_sz, nmeaGPVTG *pack);
 int nmea_parse_HCHDG(const char *buff, int buff_sz, nmeaHCHDG *pack);
+int nmea_parse_HCHDT(const char *buff, int buff_sz, nmeaHCHDT *pack);
 int nmea_parse_TIROT(const char *buff, int buff_sz, nmeaTIROT *pack);
 int nmea_parse_YXXDR(const char *buff, int buff_sz, nmeaYXXDR *pack);
 
@@ -35,6 +36,7 @@ void nmea_GPGSV2info(nmeaGPGSV *pack, nmeaINFO *info);
 void nmea_GPRMC2info(nmeaGPRMC *pack, nmeaINFO *info);
 void nmea_GPVTG2info(nmeaGPVTG *pack, nmeaINFO *info);
 void nmea_HCHDG2info(nmeaHCHDG *pack, nmeaINFO *info);
+void nmea_HCHDT2info(nmeaHCHDT *pack, nmeaINFO *info);
 void nmea_TIROT2info(nmeaTIROT *pack, nmeaINFO *info);
 void nmea_YXXDR2info(nmeaYXXDR *pack, nmeaINFO *info);
 

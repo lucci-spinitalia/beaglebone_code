@@ -199,6 +199,19 @@ void RTB_init(void);
  */
 void RTB_set_mode(RTB_mode);
 
+/** \brief RTB latitude and longitude traslation
+ *
+ * \ingroup ReturnToBase      
+ *  This function traslate all point into the list. This is useful when the first point 
+ * has been catched by odomery with position unknown, so lon and lat start by zero. 
+ * As soon as get actual position we have to tralate the previous points.
+ * @param new_lat actual lon
+ * @param new_lon actual lat
+ * @return void
+ * @see RTB_update
+ */
+void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon);
+
 /** \brief RTB main cycle handler
  *
  * \ingroup ReturnToBase      
@@ -269,7 +282,7 @@ typedef struct RTB_point{
  * @brief Debug define. Set to 1 to enable.
  * \ingroup ReturnToBase  
  */
-#define DEBUG   1
+#define DEBUG   0
 
 /**
  * @brief Simulator define. Set to 1 to enable.

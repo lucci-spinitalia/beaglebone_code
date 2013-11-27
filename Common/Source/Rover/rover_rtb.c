@@ -16,7 +16,7 @@ long RTB_internal_counter=0, RTB_internal_decimator=1;
 extern RTB_status RTBstatus;
 RTB_point *RTB_internal_point_actual, *RTB_internal_point_start, *RTB_internal_point_last;
 int RTB_internal_initialized=0, RTB_active=0,RTB_complete=0,RTB_reset=0;
-RTB_FLOAT_TYPE RTB_internal_distance=0, RTB_internal_angular_multiplier=1, RTB_internal_distance_threshold=0,RTB_internal_longitudinal_multiplier=1;
+RTB_FLOAT_TYPE RTB_internal_angular_multiplier=1, RTB_internal_distance_threshold=0,RTB_internal_longitudinal_multiplier=1;
 
 //#elif (RTB_GEO_MODE == RTB_GEO_MODE_LATLON)
 
@@ -25,6 +25,23 @@ RTB_FLOAT_TYPE RTB_internal_distance=0, RTB_internal_angular_multiplier=1, RTB_i
 #endif
 
 
+void gps_log(double latitude, double longitude)
+{
+  FILE *file = NULL;
+
+  // Init Log File
+  file = fopen("gps_log", "a");
+  
+  if(!file)
+  {
+    perror("logfile fopen:");
+    return;
+  }
+  
+  fprintf(file, "%f,%f,0 \n", longitude, latitude);
+
+  fclose(file);
+}
 
 #if (RTB_GEO_MODE == RTB_GEO_MODE_EUCLIDEAN)
 RTB_FLOAT_TYPE RTB_internal_getdistance(RTB_FLOAT_TYPE x1, RTB_FLOAT_TYPE y1, RTB_FLOAT_TYPE x2, RTB_FLOAT_TYPE y2)
@@ -58,8 +75,8 @@ RTB_FLOAT_TYPE RTB_internal_getdistance(RTB_FLOAT_TYPE lon1, RTB_FLOAT_TYPE lat1
     where R is the radius of the earth, R = 6367 km
    */
     RTB_FLOAT_TYPE x,y;
-    x = (lon2-lon1) * cos(lat1 * 3.14 / 180) * 3.14 / 180;  // lon2-lon1 must be in radians 
-    y = (lat2-lat1) * 3.14 / 180; // lat2-lat1 must be in radians
+    x = (lon2-lon1) * cos(lat1 * M_PI / 180) * M_PI / 180;  // lon2-lon1 must be in radians 
+    y = (lat2-lat1) * M_PI / 180; // lat2-lat1 must be in radians
     return(sqrt(x*x + y*y) * EARTH * 1000); 
 }
 #endif
@@ -193,14 +210,47 @@ void RTB_internal_flush(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy)
   }
 }
 
+void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon)
+{
+  RTB_point *local_current_point;
+  RTB_point *local_start_point;
+  
+  local_current_point = RTB_internal_point_last;
+  local_start_point = RTB_internal_point_start;
+  
+  while(local_current_point->previous != NULL)
+  {
+    printf("Previouse point x: %f y: %f\n", local_start_point->x, local_start_point->y);
+    local_current_point->x = new_lon - local_start_point->x;
+    local_current_point->y = new_lat - local_start_point->y;
+    printf("Current point x: %f y: %f\n", local_current_point->x, local_current_point->y);
+    
+    local_current_point = local_current_point->previous;
+    local_start_point = local_start_point->next;
+  }
+  
+  local_current_point->x = new_lon - local_start_point->x;
+  local_current_point->y = new_lat - local_start_point->y;
+  
+  local_start_point = RTB_internal_point_start;
+  while(local_start_point->next != NULL)
+  {
+    printf("Traslate Point lat: %f lon: %f\n", local_start_point->y, local_start_point->x);
+    gps_log(local_start_point->y, local_start_point->x);
+    local_start_point = local_start_point->next;
+  }
+  
+  printf("Traslate Point lat: %f lon: %f\n", local_start_point->y, local_start_point->x);
+}
 
 int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed)
 {
-  RTB_FLOAT_TYPE distance;
-
-  printf("aspeed: %f\n", aspeed);      
-  printf("xspeed: %f\n", xspeed);
-      
+  RTB_FLOAT_TYPE distance_point2point;
+#if (DEBUG == 1)
+  //printf("aspeed: %f\n", aspeed);      
+  //printf("xspeed: %f\n", xspeed);
+#endif
+  
   // I don't take the point if my speed is < 0.
   if(xspeed < 0)
     xspeed = 0;
@@ -212,6 +262,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
       {
 #if (DEBUG == 1)
         printf("Actual x and y: %f  -  %f\n", localx, localy);
+	gps_log(localy, localx);
 #endif
         RTB_internal_point_start = malloc(sizeof(RTB_point));
         RTB_internal_point_start->x=localx;
@@ -229,9 +280,9 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
       }
 
 #if (RTB_SAVE_DIST_ADAPTIVE_ANGULAR==0 && RTB_SAVE_DIST_ADAPTIVE_LONGITUDINAL==0)
-           
-      RTB_internal_distance = RTB_internal_getdistance(localx,localy,RTB_internal_point_last->x,RTB_internal_point_last->y);
-      if((RTB_internal_distance >= RTB_SAVE_DIST_TRSH) && (xspeed >= 0))
+      
+      RTBstatus.distance = RTB_internal_getdistance(localx,localy,RTB_internal_point_last->x,RTB_internal_point_last->y);
+      if((RTBstatus.distance >= RTB_SAVE_DIST_TRSH) && (xspeed >= 0))
       {
         RTB_point *local_point;
         local_point = RTB_internal_point_last;
@@ -241,11 +292,12 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
         RTB_internal_point_last->next=NULL;
         RTB_internal_point_last->x=localx;
         RTB_internal_point_last->y=localy;
-        RTB_internal_point_last->distance_from_start=RTB_internal_distance;
+        RTB_internal_point_last->distance_from_start = RTBstatus.distance;
         RTB_internal_counter++;
 
 #if (DEBUG == 1)
         printf("Actual x and y: %f  -  %f\n", localx, localy);
+	gps_log(localy, localx);
 #endif
 #if (SIMUL == 1)
         rtb_video_take_point(RTB_internal_point_last);
@@ -257,7 +309,8 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
 #endif (SIMUL == 1)
 
       RTB_internal_flush(localx, localy);
-      RTBstatus.distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_start->x, RTB_internal_point_start->y);
+      RTBstatus.distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_last->x, RTB_internal_point_last->y);
+      //RTBstatus.distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_start->x, RTB_internal_point_start->y);
 
 #else
 #if (RTB_SAVE_DIST_ADAPTIVE_LONGITUDINAL)
@@ -297,9 +350,14 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
             
       //dbg_print("RTB","Long_mult %3.2f, Ang_mult %3.2f, dst_trsh %3.2f\n",RTB_internal_longitudinal_multiplier, RTB_internal_angular_multiplier, RTB_internal_distance_threshold);
                        
-      RTB_internal_distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_last->x, RTB_internal_point_last->y);
-      printf("Get distance: %f, Distance Threshold: %f\n", RTB_internal_distance, RTB_internal_distance_threshold);
-      if((RTB_internal_distance >= RTB_internal_distance_threshold) && (xspeed >= 0))
+      RTBstatus.distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_last->x, RTB_internal_point_last->y);
+
+#if (DEBUG == 1)
+      printf("Current x: %f Current y: %f \nLast x: %f Last y: %f\n", localx, localy, RTB_internal_point_last->x, RTB_internal_point_last->y);
+      printf("Get distance: %f, Distance Threshold: %f\n", RTBstatus.distance, RTB_internal_distance_threshold);
+#endif
+      
+      if((RTBstatus.distance >= RTB_internal_distance_threshold) && (xspeed >= 0))
       {
         RTB_point *local_point;
         local_point = RTB_internal_point_last;
@@ -309,10 +367,11 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
         RTB_internal_point_last->next=NULL;
         RTB_internal_point_last->x=localx;
         RTB_internal_point_last->y=localy;
-        RTB_internal_point_last->distance_from_start=RTB_internal_distance;
+        RTB_internal_point_last->distance_from_start = RTBstatus.distance;
         RTB_internal_counter++;
 #if (DEBUG == 1)
         printf("Actual x and y: %f  -  %f\n",localx,localy);
+	gps_log(localy, localx);
 #endif
 #if (SIMUL == 1)                
         rtb_video_take_point(RTB_internal_point_last);
@@ -323,7 +382,8 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
 #endif
 
       RTB_internal_flush(localx,localy);
-      RTBstatus.distance = RTB_internal_getdistance(localx,localy,RTB_internal_point_start->x,RTB_internal_point_start->y);
+      RTBstatus.distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_last->x, RTB_internal_point_last->y);
+      //RTBstatus.distance = RTB_internal_getdistance(localx,localy,RTB_internal_point_start->x,RTB_internal_point_start->y);
             
 /*
 #elif (RTB_SAVE_DIST_ADAPTIVE_LONGITUDINAL && !RTB_SAVE_DIST_ADAPTIVE_ANGULAR)
@@ -334,6 +394,9 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
             
 #elif (RTB_SAVE_DIST_ADAPTIVE_LONGITUDINAL && RTB_SAVE_DIST_ADAPTIVE_ANGULAR)
             int a = 1;*/
+#endif
+#if (DEBUG == 1)
+      //printf("Distance from the previous point: %f\n", RTBstatus.distance);
 #endif
       RTB_internal_point_actual = RTB_internal_point_last;
       break;
@@ -376,8 +439,13 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
         RTB_set_mode(RTB_idle);
         return RTBstatus.mode;
       }
-            
-      if(RTB_internal_getdistance(localx,localy,RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y) <= RTB_GUIDE_CHANGE_DIST_TRSH && RTB_internal_point_actual->previous != NULL)
+           
+      RTBstatus.distance = RTB_internal_getdistance(localx,localy,RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y);
+#if (DEBUG == 1)
+      printf("Current x: %f Current y: %f Previouse x: %f Previouse y: %f\n", localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y);
+      printf("Get distance: %f, Distance Threshold: %f\n", RTBstatus.distance, RTB_internal_distance_threshold);
+#endif
+      if(RTBstatus.distance <= RTB_GUIDE_CHANGE_DIST_TRSH && RTB_internal_point_actual->previous != NULL)
       {
 #if (DEBUG == 1)
         printf("Point reached\n");
@@ -403,23 +471,22 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
 #if (SIMUL == 1)
       rtb_video_take_current_position(localx, localy);
 #endif
-           
-      if (RTB_internal_point_actual->next == NULL)
+      
+      distance_point2point = RTB_internal_getdistance(RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y,RTB_internal_point_actual->x,RTB_internal_point_actual->y);
+      
+      if(RTB_internal_point_actual->next == NULL)
       {
         RTBstatus.control_vector = lucciPLAN_givedir_multiparam(localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y);
-        distance = RTB_internal_getdistance(RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y,RTB_internal_point_actual->x,RTB_internal_point_actual->y);
         
-        if(distance < 2.0)
+        if(distance_point2point < 2.0)
           RTBstatus.control_vector = lucciSERVICE_vect_set_norm(0.4,RTBstatus.control_vector);
         else
           RTBstatus.control_vector = lucciSERVICE_vect_set_norm(1.0,RTBstatus.control_vector);
       }
       else
       {
-        if (RTB_internal_getdistance(RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y,RTB_internal_point_actual->x,RTB_internal_point_actual->y) < 2.0)
-        {
+        if(distance_point2point < 2.0)
           RTBstatus.control_vector = lucciSERVICE_vect_set_norm(0.4,lucciPLAN_givedir_multiparam(localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y));
-        }
         else
         {
           //calcola la congiungente tra i due punti

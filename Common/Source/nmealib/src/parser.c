@@ -19,6 +19,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 typedef struct _nmeaParserNODE
 {
@@ -84,7 +85,7 @@ int nmea_parse(
     void *pack = 0;
 
     NMEA_ASSERT(parser && parser->buffer);
-
+    
     // Analyze buffer and take info into parser
     nmea_parser_push(parser, buff, buff_sz);
 
@@ -111,6 +112,9 @@ int nmea_parse(
             break;
         case HCHDG:
             nmea_HCHDG2info((nmeaHCHDG *)pack, info);
+            break;
+        case HCHDT:
+            nmea_HCHDT2info((nmeaHCHDT *)pack, info);
             break;
         case TIROT:
             nmea_TIROT2info((nmeaTIROT *)pack, info);
@@ -144,7 +148,6 @@ int nmea_parser_real_push(nmeaPARSER *parser, const char *buff, int buff_sz)
         parser->buff_size - parser->buff_use
         );
         */
-
     /* add */
     if(parser->buff_use + buff_sz >= parser->buff_size)
         nmea_parser_buff_clear(parser);
@@ -161,6 +164,7 @@ int nmea_parser_real_push(nmeaPARSER *parser, const char *buff, int buff_sz)
             (const char *)parser->buffer + nparsed,
             (int)parser->buff_use - nparsed, &crc);
 
+	//printf("sen_sz: %i\n", sen_sz);
         if(!sen_sz)
         {
             if(nparsed)
@@ -222,6 +226,7 @@ int nmea_parser_real_push(nmeaPARSER *parser, const char *buff, int buff_sz)
             case GPRMC:
                 if(0 == (node->pack = malloc(sizeof(nmeaGPRMC))))
                     goto mem_fail;
+
                 node->packType = GPRMC;
                 if(!nmea_parse_GPRMC(
                     (const char *)parser->buffer + nparsed,
@@ -251,6 +256,19 @@ int nmea_parser_real_push(nmeaPARSER *parser, const char *buff, int buff_sz)
               if(!nmea_parse_HCHDG(
                 (const char *)parser->buffer + nparsed,
                 sen_sz, (nmeaHCHDG *)node->pack))
+              {
+                  free(node);
+                  node = 0;
+              }
+              break;
+
+            case HCHDT:
+              if(0 == (node->pack = malloc(sizeof(nmeaHCHDT))))
+                goto mem_fail;
+              node->packType = HCHDT;
+              if(!nmea_parse_HCHDT(
+                (const char *)parser->buffer + nparsed,
+                sen_sz, (nmeaHCHDT *)node->pack))
               {
                   free(node);
                   node = 0;

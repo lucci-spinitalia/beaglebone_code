@@ -6,12 +6,14 @@
 #include "socket_udp.h"
 
 #define MOTOR_NUMBER 7
+
 #define ARM_HOME_FILE "static_position"
 #define ARM_DINAMIC_FILE "dinamic_position"
 #define ARM_BOX_FILE "box_position"
 #define ARM_PARK_FILE "park_position"
 #define ARM_STEP_FILE "step_position"
 #define ARM_GEAR_FILE "gear"
+#define ARM_LINK_LENGTH_FILE "link_length"
 
 struct arm_frame
 {
@@ -47,12 +49,15 @@ struct arm_info
   __u8 trajectory_status; //0: done 1: in progress
   
   long position_target;
-  long gear;
   
   // this flag tell which request has been sent to the arm
   __u8 request_actual_position;
   __u8 request_trajectory_status;
   __u8 request_timeout;
+  
+  // Fix param
+  unsigned int link_length;  //link's length in mm
+  long gear;
 };
 
 extern unsigned char arm_buffer_tx_empty;
@@ -92,4 +97,6 @@ int arm_homing_check();
 void arm_automatic_motion_abort();
 int arm_read_path(const char *file_path, long *motor_position_target, int *cursor_position);
 
+void arm_calc_xyz(double *wrist_x, double *wrist_y, double *wrist_z, double *x, double *y, double *z);
+int wrist_calc_tetha(double new_wrist_x, double new_wrist_y, double new_wrist_z, long *tetha3, long *tetha4);
 #endif

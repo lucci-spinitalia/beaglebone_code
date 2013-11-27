@@ -72,13 +72,22 @@ void gps_generate_init(int signal, int fix, double lat, double lon, double speed
   longitude_start = GpsCoord2Double(lon);
 }
 
-int gps_generate(float linear_velocity_km_h, float yaw_rate_rps, long sample_rate_us, char *gps_message, nmeaINFO *info_scr)
+int gps_generate(float linear_velocity_km_h, float direction, long sample_rate_us, char *gps_message, nmeaINFO *info_scr)
 {
   char buff[2048];
   int gen_sz;
   double delta_position = 0;
   static double x, y;
-  //static double direction = 0;
+  static double relative_x, relative_y, relative_direction;
+  static double start_angle = 0;
+  static int time_hs = 0;
+  static int time_sec = 0;
+  static int time_min = 0;
+  static int time_hour = 0;
+  
+  if(start_angle == 0)
+    start_angle = direction;
+  
   nmeaINFO *nmea_info;
   
   if(info_scr == NULL)
@@ -92,28 +101,50 @@ int gps_generate(float linear_velocity_km_h, float yaw_rate_rps, long sample_rat
   sprintf(gps_message, "%s", &buff[0]);
 
   nmea_info->speed = linear_velocity_km_h;
-  nmea_info->utc.sec += 1;
-
-  if(nmea_info->utc.sec == 60)
+  time_hs += sample_rate_us / 10000;
+  
+  if(time_hs > 100)
   {
-    nmea_info->utc.sec = 0;
-    nmea_info->utc.min++;
+    time_sec += (time_hs/ 100);
+    time_hs -= (time_hs/ 100) * 100;
 
-    if(nmea_info->utc.min == 60)
+    if(time_sec >= 60)
     {
-      nmea_info->utc.min = 0;
-      nmea_info->utc.hour++;
+      time_min += (time_sec / 60);
+      time_sec -= (time_sec / 60) * 60;
+
+      if(time_min >= 60)
+      {
+        time_hour = (time_min / 60);
+        time_min -= (time_min / 60) * 60;
+      }
     }
   }
+  
+  nmea_info->utc.hour = time_hour;
+  nmea_info->utc.min = time_min;
+  nmea_info->utc.sec = time_sec;
+  nmea_info->utc.hsec = time_hs;
+  
   //printf("Velocity: %f Yaw: %f\n", linear_velocity_km_h, yaw_rate_rps);
   // 1/60 di latitudine sono circa 1.8 km
   delta_position = ((linear_velocity_km_h / 3.6) * sample_rate_us) / 1000000; // [m]
-  x += delta_position * sin(nmea_info->direction * 3.14 / 180);
-  y += delta_position * cos(nmea_info->direction  * 3.14 / 180);
+  x += delta_position * sin(direction * M_PI / 180);
+  y += delta_position * cos(direction  * M_PI / 180);
 
+  relative_direction = direction - start_angle;
+  if(relative_direction > 360)
+    relative_direction -= 360;
+  
+  if(relative_direction < -360)
+    relative_direction += 360;
+  
+  relative_x += delta_position * sin(relative_direction * M_PI / 180);
+  relative_y += delta_position * cos(relative_direction  * M_PI / 180);
+  //printf("Gps X: %f  Y: %f delta: %f direction: %f\n", relative_x, relative_y, delta_position, relative_direction);
   //direction += (yaw_rate_rps * sample_rate_us) / 1000000;
   // Add a scale factor to yaw_rate_rps due the friction and the weigth
-  nmea_info->direction += ((yaw_rate_rps * sample_rate_us) / 1000000) * 180 / 3.14;  // degree
+  nmea_info->direction = direction;//((yaw_rate_rps * sample_rate_us) / 1000000) * 180 / M_PI;  // degree
   
   if(nmea_info->direction < 0)
     nmea_info->direction += 360;
@@ -149,9 +180,9 @@ int gps_generate(float linear_velocity_km_h, float yaw_rate_rps, long sample_rat
 
     where R is the radius of the earth, R = 6367 km
    */
-  nmea_info->lon = Double2GpsCoord(longitude_start + x * 180 / (3.14 * 6367000) * cos(GpsCoord2Double(nmea_info->lat) * 3.14 / 180));
-  nmea_info->lat = Double2GpsCoord(latitude_start + y * 180 / (3.14 * 6367000));
-  
+  nmea_info->lon = Double2GpsCoord(longitude_start + x * 180 / ((M_PI * 6367000) * cos(GpsCoord2Double(nmea_info->lat) * M_PI / 180)));
+  nmea_info->lat = Double2GpsCoord(latitude_start + y * 180 / (M_PI * 6367000));
+
   //printf("Generate lon: %f lat: %f Direction: %f\n",
   //       longitude_start + x * 180 / (3.14 * 6367000) * cos(GpsCoord2Double(nmea_info->lat) * 3.14 / 180),
   //       latitude_start + y * 180 / (3.14 * 6367000), nmea_info->direction);

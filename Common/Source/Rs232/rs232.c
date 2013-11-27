@@ -242,6 +242,56 @@ int rs232_unload_rx(unsigned char *data)
   return length_to_write;
 }
 
+int rs232_unload_rx_filtered(char *data, char token)
+{
+  int length_to_write = 0;
+  char rs232_buffer_rx_temp[RS232_BUFFER_SIZE];
+  char *token_ptr;
+
+  if(rs232_buffer_rx_empty)
+    return 0;
+
+  rs232_buffer_rx_full = 0;
+ 
+  if(rs232_buffer_rx_ptr_rd < rs232_buffer_rx_ptr_wr)
+  {
+    memcpy(rs232_buffer_rx_temp, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], rs232_buffer_rx_ptr_wr - rs232_buffer_rx_ptr_rd);
+    rs232_buffer_rx_temp[rs232_buffer_rx_ptr_wr - rs232_buffer_rx_ptr_rd] = '\0';
+    token_ptr = strrchr(rs232_buffer_rx_temp, token);
+    
+    if(token_ptr == NULL)
+      return 0;
+    else
+    {
+      length_to_write = (token_ptr - rs232_buffer_rx_temp);
+      //printf("String: %s\n", rs232_buffer_rx_temp);
+    }
+    
+    memcpy(data, rs232_buffer_rx_temp, length_to_write);
+  }
+  else
+  {
+    length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_rd);
+    memcpy(data, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+  }
+	    //printf("rs232_buffer_rx_ptr_rd: %i, rs232_buffer_rx_ptr_wr: %i \n", rs232_buffer_rx_ptr_rd, rs232_buffer_rx_ptr_wr);
+  rs232_buffer_rx_data_count -= length_to_write;
+
+  if(rs232_buffer_rx_data_count == 0)
+    rs232_buffer_rx_empty = 1;
+
+  rs232_buffer_rx_ptr_rd += length_to_write;
+
+  if(rs232_buffer_rx_ptr_rd == RS232_BUFFER_SIZE)
+    rs232_buffer_rx_ptr_rd = 0;
+
+//  printf("\nempty: %i, data_count: %i\n", rs232_buffer_rx_empty,rs232_buffer_rx_data_count);
+//  printf("full: %i, rd pointer: %i\n", rs232_buffer_rx_full, rs232_buffer_rx_ptr_rd);
+//  printf("\n");
+
+  return length_to_write;
+}
+
 int rs232_read(int rs232_device)
 {
   int bytes_read = -1;
@@ -258,7 +308,7 @@ int rs232_read(int rs232_device)
     // circular buffer. So I can read only the data before restart the
     // buffer.
     bytes_read = read(rs232_device, &rs232_buffer_rx[rs232_buffer_rx_ptr_wr], (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr));
-
+    
     if(bytes_read > 0)
     {
       rs232_buffer_rx_empty = 0;

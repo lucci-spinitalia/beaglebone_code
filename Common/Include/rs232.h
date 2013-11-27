@@ -18,6 +18,7 @@ void flush_device_output(int *);
 
 int rs232_load_tx(unsigned char *data, unsigned int data_length);
 int rs232_unload_rx(unsigned char *data);
+int rs232_unload_rx_filtered(char *data, char token);
 int rs232_write(int rs232_device);
 int rs232_read(int rs232_device);
 int rs232_buffer_tx_get_space(void);

@@ -106,6 +106,7 @@ int nmea_pack_type(const char *buff, int buff_sz)
         "GPRMC",
         "GPVTG",
         "HCHDG",
+        "HCHDT",
         "TIROT",
         "YXXDR",
     };
@@ -127,8 +128,10 @@ int nmea_pack_type(const char *buff, int buff_sz)
     else if(0 == memcmp(buff, pheads[5], 5))
         return HCHDG;
     else if(0 == memcmp(buff, pheads[6], 5))
-        return TIROT;
+        return HCHDT;
     else if(0 == memcmp(buff, pheads[7], 5))
+        return TIROT;
+    else if(0 == memcmp(buff, pheads[8], 5))
         return YXXDR;
 
     return GPNON;
@@ -322,19 +325,23 @@ int nmea_parse_GPRMC(const char *buff, int buff_sz, nmeaGPRMC *pack)
     if(nsen != 13 && nsen != 14)
     {
         nmea_error("GPRMC parse error!");
-        return 0;
+        //return 0;
     }
-
-    if(0 != _nmea_parse_time(&time_buff[0], (int)strlen(&time_buff[0]), &(pack->utc)))
+    else 
     {
+      if(0 != _nmea_parse_time(&time_buff[0], (int)strlen(&time_buff[0]), &(pack->utc)))
+      {
         nmea_error("GPRMC time parse error!");
-        return 0;
+        //return 0;
+      }
+      else
+      {
+        if(pack->utc.year < 90)
+          pack->utc.year += 100;
+        pack->utc.mon -= 1;
+      }
     }
-
-    if(pack->utc.year < 90)
-        pack->utc.year += 100;
-    pack->utc.mon -= 1;
-
+    
     return 1;
 }
 
@@ -399,6 +406,32 @@ int nmea_parse_HCHDG(const char *buff, int buff_sz, nmeaHCHDG *pack)
         &(pack->ew_variation)))
     {
         nmea_error("HCHDG parse error!");
+        return 0;
+    }
+
+    return 1;
+}
+
+/**
+ * \brief Parse HDT packet from buffer.
+ * @param buff a constant character pointer of packet buffer.
+ * @param buff_sz buffer size.
+ * @param pack a pointer of packet which will filled by function.
+ * @return 1 (true) - if parsed successfully or 0 (false) - if fail.
+ */
+int nmea_parse_HCHDT(const char *buff, int buff_sz, nmeaHCHDT *pack)
+{
+    NMEA_ASSERT(buff && pack);
+
+    memset(pack, 0, sizeof(nmeaHCHDT));
+
+    nmea_trace_buff(buff, buff_sz);
+
+    if(2 != nmea_scanf(buff, buff_sz,
+        "$HCHDT,%f,%C*",
+        &(pack->direction), &(pack->t_flag)))
+    {
+        nmea_error("HCHDT parse error!");
         return 0;
     }
 
@@ -499,29 +532,33 @@ void nmea_GPGGA2info(nmeaGPGGA *pack, nmeaINFO *info)
  */
 void nmea_GPGSA2info(nmeaGPGSA *pack, nmeaINFO *info)
 {
-    int i, j, nuse = 0;
+  int i, j, nuse = 0;
 
-    NMEA_ASSERT(pack && info);
+  NMEA_ASSERT(pack && info);
 
-    info->fix = pack->fix_type;
-    info->PDOP = pack->PDOP;
-    info->HDOP = pack->HDOP;
-    info->VDOP = pack->VDOP;
+  info->fix = pack->fix_type;
+  info->PDOP = pack->PDOP;
+  info->HDOP = pack->HDOP;
+  info->VDOP = pack->VDOP;
 
-    for(i = 0; i < NMEA_MAXSAT; ++i)
+  for(i = 0; i < NMEA_MAXSAT; ++i)
+  {
+    if(pack->sat_prn[i])
     {
-        for(j = 0; j < info->satinfo.inview; ++j)
+      nuse++;
+      for(j = 0; j < info->satinfo.inview; ++j)
+      {
+        if(pack->sat_prn[i] == info->satinfo.sat[j].id)
         {
-            if(pack->sat_prn[i] && pack->sat_prn[i] == info->satinfo.sat[j].id)
-            {
-                info->satinfo.sat[j].in_use = 1;
-                nuse++;
-            }
+          info->satinfo.sat[j].in_use = 1;
+          break;
         }
+      }
     }
+  }
 
-    info->satinfo.inuse = nuse;
-    info->smask |= GPGSA;
+  info->satinfo.inuse = nuse;
+  info->smask |= GPGSA;
 }
 
 /**
@@ -542,7 +579,9 @@ void nmea_GPGSV2info(nmeaGPGSV *pack, nmeaINFO *info)
     if(pack->pack_index < 1)
         pack->pack_index = 1;
 
-    info->satinfo.inview = pack->sat_count;
+    // This field contain data only in the first instance
+    if(pack->pack_index == 1)
+      info->satinfo.inview = pack->sat_count;
 
     nsat = (pack->pack_index - 1) * NMEA_SATINPACK;
     nsat = (nsat + NMEA_SATINPACK > pack->sat_count)?pack->sat_count - nsat:NMEA_SATINPACK;
@@ -571,7 +610,7 @@ void nmea_GPRMC2info(nmeaGPRMC *pack, nmeaINFO *info)
     if('A' == pack->status)
     {
         if(NMEA_SIG_BAD == info->sig)
-            info->sig = NMEA_SIG_MID;
+            info->sig = NMEA_SIG_LOW;
         if(NMEA_FIX_BAD == info->fix)
             info->fix = NMEA_FIX_2D;
     }
@@ -616,6 +655,21 @@ void nmea_HCHDG2info(nmeaHCHDG *pack, nmeaINFO *info)
     info->magnetic_sensor_heading = pack->mag_heading;
     info->magnetic_sensor_deviation = ((pack->ew_deviation == 'E')?pack->mag_deviation:-(pack->mag_deviation));
     info->magnetic_sensor_variation = ((pack->ew_variation == 'E')?pack->mag_variation:-(pack->mag_variation));
+}
+
+/**
+ * \brief Fill nmeaINFO structure by HCHDT packet data.
+ * @param pack a pointer of packet structure.
+ * @param info a pointer of summary information structure.
+ */
+void nmea_HCHDT2info(nmeaHCHDT *pack, nmeaINFO *info)
+{
+    NMEA_ASSERT(pack && info);
+
+    if('T' == pack->t_flag)
+      info->magnetic_sensor_heading_true = pack->direction;
+    
+    info->smask |= HCHDT;
 }
 
 /**

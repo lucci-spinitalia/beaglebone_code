@@ -100,6 +100,7 @@ typedef struct _nmeaINFO
     double  declination; /**< Magnetic variation degrees (Easterly var. subtracts from true course) */
 
     double magnetic_sensor_heading; /**< Magnetic sensor heading [degree] */
+    double magnetic_sensor_heading_true; /**< Magnetic sensor heading relative to true north [degree] */
     double magnetic_sensor_deviation; /**< Magnetic sensor deviation in EDEG - +/-[degree] */
     double magnetic_sensor_variation; /**< Magnetic sensor variation in EDEG - +/-[degree] */
     double rate_turn;                 /**< Rate of turn [degree/minute] */

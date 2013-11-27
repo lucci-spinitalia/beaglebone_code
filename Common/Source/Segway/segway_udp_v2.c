@@ -145,7 +145,7 @@ int segway_motion_set(int socket, struct sockaddr_in *dest_address, float veloci
   velocity_scaled = velocity / scale_value;
 
   // To reduce the sensitivity of the joystick
-  velocity_scaled *= fabs(velocity_scaled);
+  //velocity_scaled *= fabs(velocity_scaled);
 
   ieee754_velocity_scaled = convert_to_ieee754(velocity_scaled);
   
@@ -154,7 +154,7 @@ int segway_motion_set(int socket, struct sockaddr_in *dest_address, float veloci
   yaw_scaled = yaw / scale_value;
 
   // To reduce the sensitivity of the joystick
-  yaw_scaled *= fabs(yaw_scaled);
+  //yaw_scaled *= fabs(yaw_scaled);
 
   ieee754_yaw_scaled = convert_to_ieee754(yaw_scaled);
 
@@ -274,14 +274,14 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
     
   // Set max turn rate
   //printf("segway_configure_max_turn_rate\n");
-  byte_sent = segway_configure_max_turn_rate(socket, address, 1/*MAX_TURN_RATE*/);
+  byte_sent = segway_configure_max_turn_rate(socket, address, 1.25/*MAX_TURN_RATE*/);
 
   if(byte_sent <= 0)
     return -1;
 
   // Set max turn accel
   //printf("segway_configure_max_turn_accel\n");
-  byte_sent = segway_configure_max_turn_accel(socket, address, 1/*MAX_TURN_ACCEL*/);
+  byte_sent = segway_configure_max_turn_accel(socket, address, 2/*MAX_TURN_ACCEL*/);
 
   if(byte_sent <= 0)
     return -1;
