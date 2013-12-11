@@ -29,11 +29,11 @@ int can_init(int *socket_can, struct sockaddr_can *addr, struct ifreq *ifr, int 
   // Configure can interface
   sprintf(buffer, "canconfig can0 bitrate 1000000 ctrlmode berr-reporting on");
   if(system(buffer) < 0)
-    perror("configure can interface");
+    return -1;
 	
   sprintf(buffer, "canconfig can0 start");
   if(system(buffer) < 0)
-    perror("starting can interface");	
+    return -1;	
 	
   // Create the socket
   *socket_can = socket(PF_CAN, SOCK_RAW, CAN_RAW);
@@ -69,4 +69,12 @@ int can_init(int *socket_can, struct sockaddr_can *addr, struct ifreq *ifr, int 
     return -1;
 
   return 0;
+}
+
+int can_restart(void)
+{
+  if(system("canconfig can0 restart") < 0)
+    return -1;
+  
+  return 1;
 }

@@ -282,7 +282,7 @@ typedef struct RTB_point{
  * @brief Debug define. Set to 1 to enable.
  * \ingroup ReturnToBase  
  */
-#define DEBUG   0
+#define DEBUG   1
 
 /**
  * @brief Simulator define. Set to 1 to enable.

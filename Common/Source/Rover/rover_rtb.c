@@ -236,7 +236,7 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon)
   while(local_start_point->next != NULL)
   {
     printf("Traslate Point lat: %f lon: %f\n", local_start_point->y, local_start_point->x);
-    gps_log(local_start_point->y, local_start_point->x);
+    //gps_log(local_start_point->y, local_start_point->x);
     local_start_point = local_start_point->next;
   }
   

@@ -57,6 +57,9 @@ struct arm_info
   
   // Fix param
   unsigned int link_length;  //link's length in mm
+  long link_offset_x;  //offset along x axis
+  long link_offset_y;   //offset along y axis
+  long link_offset_z;   //offset along z axis
   long gear;
 };
 
@@ -97,6 +100,6 @@ int arm_homing_check();
 void arm_automatic_motion_abort();
 int arm_read_path(const char *file_path, long *motor_position_target, int *cursor_position);
 
-void arm_calc_xyz(double *wrist_x, double *wrist_y, double *wrist_z, double *x, double *y, double *z);
-int wrist_calc_tetha(double new_wrist_x, double new_wrist_y, double new_wrist_z, long *tetha3, long *tetha4);
+void arm_calc_xyz(double *x, double *y, double *z, double tetha0, double tetha1, double tetha2);
+int arm_calc_tetha(double new_x, double new_y, double new_z, long *tetha0, long *tetha1, long *tetha2);
 #endif

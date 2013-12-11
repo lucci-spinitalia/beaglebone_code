@@ -236,7 +236,7 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon)
   while(local_start_point->next != NULL)
   {
     printf("Traslate Point lat: %f lon: %f\n", local_start_point->y, local_start_point->x);
-    //gps_log(local_start_point->y, local_start_point->x);
+    gps_log(local_start_point->y, local_start_point->x);
     local_start_point = local_start_point->next;
   }
   
@@ -262,7 +262,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
       {
 #if (DEBUG == 1)
         printf("Actual x and y: %f  -  %f\n", localx, localy);
-	//gps_log(localy, localx);
+	gps_log(localy, localx);
 #endif
         RTB_internal_point_start = malloc(sizeof(RTB_point));
         RTB_internal_point_start->x=localx;
@@ -297,7 +297,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
 
 #if (DEBUG == 1)
         printf("Actual x and y: %f  -  %f\n", localx, localy);
-	//gps_log(localy, localx);
+	gps_log(localy, localx);
 #endif
 #if (SIMUL == 1)
         rtb_video_take_point(RTB_internal_point_last);
@@ -371,7 +371,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
         RTB_internal_counter++;
 #if (DEBUG == 1)
         printf("Actual x and y: %f  -  %f\n",localx,localy);
-	//gps_log(localy, localx);
+	gps_log(localy, localx);
 #endif
 #if (SIMUL == 1)                
         rtb_video_take_point(RTB_internal_point_last);

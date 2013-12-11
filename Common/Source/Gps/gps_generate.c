@@ -78,15 +78,10 @@ int gps_generate(float linear_velocity_km_h, float direction, long sample_rate_u
   int gen_sz;
   double delta_position = 0;
   static double x, y;
-  static double relative_x, relative_y, relative_direction;
-  static double start_angle = 0;
   static int time_hs = 0;
   static int time_sec = 0;
   static int time_min = 0;
   static int time_hour = 0;
-  
-  if(start_angle == 0)
-    start_angle = direction;
   
   nmeaINFO *nmea_info;
   
@@ -132,15 +127,6 @@ int gps_generate(float linear_velocity_km_h, float direction, long sample_rate_u
   x += delta_position * sin(direction * M_PI / 180);
   y += delta_position * cos(direction  * M_PI / 180);
 
-  relative_direction = direction - start_angle;
-  if(relative_direction > 360)
-    relative_direction -= 360;
-  
-  if(relative_direction < -360)
-    relative_direction += 360;
-  
-  relative_x += delta_position * sin(relative_direction * M_PI / 180);
-  relative_y += delta_position * cos(relative_direction  * M_PI / 180);
   //printf("Gps X: %f  Y: %f delta: %f direction: %f\n", relative_x, relative_y, delta_position, relative_direction);
   //direction += (yaw_rate_rps * sample_rate_us) / 1000000;
   // Add a scale factor to yaw_rate_rps due the friction and the weigth
@@ -180,6 +166,12 @@ int gps_generate(float linear_velocity_km_h, float direction, long sample_rate_u
 
     where R is the radius of the earth, R = 6367 km
    */
+  
+  // I use longitude_start instead a2 because I need to store the last position. I can write:
+  // lon1_s = longitude_start + x_old
+  // lon2 = lon1_s + x * 180 / (pi * R * cos(lat1))
+  //
+  // In other word, x and y store the previouse distance plus the delta calculated here
   nmea_info->lon = Double2GpsCoord(longitude_start + x * 180 / ((M_PI * 6367000) * cos(GpsCoord2Double(nmea_info->lat) * M_PI / 180)));
   nmea_info->lat = Double2GpsCoord(latitude_start + y * 180 / (M_PI * 6367000));
 

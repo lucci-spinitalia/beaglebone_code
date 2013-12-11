@@ -232,7 +232,7 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
 					OPERATIONAL_STATE|LINEAR_VEL_MPS|INERTIAL_Z_RATE_RPS|LINEAR_ACCEL_MPS2,
 					FRONT_BASE_BATT_1_SOC|FRONT_BASE_BATT_2_SOC|REAR_BASE_BATT_1_SOC|REAR_BASE_BATT_2_SOC|
 					FRONT_BASE_BATT_1_TEMP_DEGC|FRONT_BASE_BATT_2_TEMP_DEGC|REAR_BASE_BATT_1_TEMP_DEGC|REAR_BASE_BATT_2_TEMP_DEGC, 
-					NONE);
+					FRAM_CONFIG_BITMAP);
 
   if(byte_sent <= 0)
     return -1;
@@ -246,14 +246,14 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
  
   // Set max acceleration
   //printf("segway_configure_max_acc\n");
-  byte_sent = segway_configure_max_acc(socket, address, 0.2/*MAX_ACCELERATION*/);
+  byte_sent = segway_configure_max_acc(socket, address, 0.5/*MAX_ACCELERATION*/);
 
   if(byte_sent <= 0)
     return -1;
 
   // Set max deceleration
   //printf("segway_configure_max_decel\n");
-  byte_sent = segway_configure_max_decel(socket, address, 0.2/*MAX_DECELERATION*/);
+  byte_sent = segway_configure_max_decel(socket, address, 0.5/*MAX_DECELERATION*/);
 
   if(byte_sent <= 0)
     return -1;
@@ -324,8 +324,8 @@ int segway_read(int socket, union segway_union *segway_status, __u8 *data)
 
   if(bytes_read > 0)
   {
-    // discard message that I can't handle now
-    if(bytes_read == bitmap_count)
+    // discard message that I can't handle it now
+    if(bytes_read == (bitmap_count * 4))
     {
       //int i = 0;
       segway_config_update(udfb_data, segway_status);
@@ -456,28 +456,38 @@ int segway_configure_feedback3(int socket, struct sockaddr_in *address, __u32 me
 
 int segway_configure_feedback(int socket, struct sockaddr_in *address, __u32 feedback1_param, __u32 feedback2_param, __u32 feedback3_param)
 { 
-  int param = feedback1_param;
+  __u32 param = feedback1_param;
   
   bitmap_count = 0;
   while(param != 0)
   {
-    bitmap_count++;
+    if((param & 0x01) == 1)
+      bitmap_count++;
+    
     param = param >> 1;
   }
-  
+  //printf("Bitmapcount: %i feedback1: %ld\n", bitmap_count, feedback1_param);
+    
   param = feedback2_param;
   while(param != 0)
   {
-    bitmap_count++;
+    if((param & 0x01) == 1)
+      bitmap_count++;
+    
     param = param >> 1;
   }
-  
+  //printf("Bitmapcount: %i feedback2: %ld\n", bitmap_count, feedback2_param);
+    
   param = feedback3_param;
   while(param != 0)
   {
-    bitmap_count++;
+    if((param & 0x01) == 1)
+      bitmap_count++;
+    
     param = param >> 1;
   }
+  
+  //printf("Bitmapcount: %i feedback3: %ld\n", bitmap_count, feedback3_param);
   
   if(segway_configure_feedback1(socket, address, feedback1_param) < 0)
     return -1;

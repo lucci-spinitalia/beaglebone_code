@@ -3,5 +3,6 @@
 
 /* Prototype */
 int can_init(int *, struct sockaddr_can *, struct ifreq *, int, int);
+int can_restart(void);
 
 #endif

@@ -64,8 +64,6 @@ int main(int argc, char**argv)
   /* Status client interface*/
   int socket_status = -1;
   struct sockaddr_in socket_status_addr_dest;
-  struct sockaddr_in socket_status_addr_src;
-  unsigned char status_buffer = -1;
 
   /* Generic Variable */
   int done = 0; // for the while in main loop
@@ -77,8 +75,6 @@ int main(int argc, char**argv)
   int nfds = 0; // fd to pass to select()
   fd_set rd, wr, er; // structure for select()
   struct timeval select_timeout;
-  long timeout_scale = 1;
-  long time = 0;
   
   
   if(argc != 4)  
@@ -172,38 +168,38 @@ int main(int argc, char**argv)
         // the message would be an information such position or warning
         bytes_read = recvfrom(socket_arm, &arm_buffer_temp, sizeof(struct arm_frame), 0, NULL, NULL);
 
-	    if(bytes_read <= 0)
+        if(bytes_read <= 0)
           perror("arm_read");
         else
         {
-	      if(query_link > -1)
+          if(query_link > -1)
           {
-	        if(arm_link[query_link - 1].request_actual_position == 1)
-		    {
-		      arm_link[query_link - 1].request_actual_position = 0;
-	          arm_link[query_link - 1].actual_position = atol(arm_buffer_temp.param.arm_command);
-	 
-	          if(init != 0)
-	          {
-	            printf("\033[%iA",MOTOR_NUMBER + 1);
-	          }
-	          else
-	            init = 1;
-	    
-	          printf("Actual Positions:\n");
-	          for(i = 0; i < MOTOR_NUMBER; i++)
-	          {
-	            printf("Link%i: %ld                               \n", i + 1, arm_link[i].actual_position);
-	          }
-		
-	          query_link = -1;
-		    }
-		    else if(arm_link[query_link - 1].request_trajectory_status == 1)
+            if(arm_link[query_link - 1].request_actual_position == 1)
             {
-		      arm_link[query_link - 1].request_trajectory_status = 0;
-		  
-		      arm_link[query_link - 1].trajectory_status = atoi(arm_buffer_temp.param.arm_command);
-	          query_link = -1;
+              arm_link[query_link - 1].request_actual_position = 0;
+              arm_link[query_link - 1].actual_position = atol(arm_buffer_temp.param.arm_command);
+ 
+              if(init != 0)
+              {
+                printf("\033[%iA",MOTOR_NUMBER + 1);
+              }
+              else
+                init = 1;
+    
+              printf("Actual Positions:\n");
+              for(i = 0; i < MOTOR_NUMBER; i++)
+              {
+                printf("Link%i: %ld step %f deg        \n", i + 1, arm_link[i].actual_position, (double)arm_link[i].actual_position / (11 * arm_link[i].gear));
+              }
+   
+              query_link = -1;
+            }
+            else if(arm_link[query_link - 1].request_trajectory_status == 1)
+            {
+              arm_link[query_link - 1].request_trajectory_status = 0;
+  
+              arm_link[query_link - 1].trajectory_status = atoi(arm_buffer_temp.param.arm_command);
+              query_link = -1;
             }
           }
         }
@@ -247,8 +243,6 @@ int main(int argc, char**argv)
 
 void arm_status_update(char *file, int socket_status, struct sockaddr_in *address, struct wwvi_js_event *jse, long int joy_max_value) 
 {
-  char buffer[256];
-  char status_buffer;
   int i;
   int bytes_sent = -1;
   static unsigned char arm_state = ARM_IDLE;  // arm's state
@@ -278,14 +272,30 @@ void arm_status_update(char *file, int socket_status, struct sockaddr_in *addres
   {
     // printf("ARM_HOMING_REQUEST\n");
     // store position
-    for(i = 0; i < MOTOR_NUMBER; i++)
-	{
-      arm_set_command(i, "O", 0);
-	  arm_set_command(i, "p", 0);
-	  arm_set_command(i, "EPTR", 100);
-	  arm_set_command_without_value(i, "VST(p,1)");
-    }
-	
+    arm_set_command(1, "O", 0);
+    arm_set_command(1, "p", 0);
+    arm_set_command(1, "EPTR", 100);
+    arm_set_command_without_value(1, "VST(p,1)");
+    arm_set_command(2, "O", 871200);
+    arm_set_command(2, "p", 871200);
+    arm_set_command(2, "EPTR", 100);
+    arm_set_command_without_value(2, "VST(p,1)");    
+    arm_set_command(3, "O", 217800);
+    arm_set_command(3, "p", 217800);
+    arm_set_command(3, "EPTR", 100);
+    arm_set_command_without_value(3, "VST(p,1)");    
+    arm_set_command(4, "O", 0);
+    arm_set_command(4, "p", 0);
+    arm_set_command(4, "EPTR", 100);
+    arm_set_command_without_value(4, "VST(p,1)");    
+    arm_set_command(5, "O", 0);
+    arm_set_command(5, "p", 0);
+    arm_set_command(5, "EPTR", 100);
+    arm_set_command_without_value(5, "VST(p,1)");    
+    arm_set_command(6, "O", 0);
+    arm_set_command(6, "p", 0);
+    arm_set_command(6, "EPTR", 100);
+    arm_set_command_without_value(6, "VST(p,1)");
     set_origin = 0;
   }
   
