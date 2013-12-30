@@ -239,21 +239,21 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
 
   // Set max velocity
   //printf("segway_configure_max_vel\n");
-  byte_sent = segway_configure_max_vel(socket, address, 0.5/*MAX_VELOCITY*/);
+  byte_sent = segway_configure_max_vel(socket, address, 1/*MAX_VELOCITY*/);
 
   if(byte_sent <= 0)
     return -1;
  
   // Set max acceleration
   //printf("segway_configure_max_acc\n");
-  byte_sent = segway_configure_max_acc(socket, address, 0.5/*MAX_ACCELERATION*/);
+  byte_sent = segway_configure_max_acc(socket, address, 1/*MAX_ACCELERATION*/);
 
   if(byte_sent <= 0)
     return -1;
 
   // Set max deceleration
   //printf("segway_configure_max_decel\n");
-  byte_sent = segway_configure_max_decel(socket, address, 0.5/*MAX_DECELERATION*/);
+  byte_sent = segway_configure_max_decel(socket, address, 1/*MAX_DECELERATION*/);
 
   if(byte_sent <= 0)
     return -1;
@@ -274,7 +274,7 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
     
   // Set max turn rate
   //printf("segway_configure_max_turn_rate\n");
-  byte_sent = segway_configure_max_turn_rate(socket, address, 1.25/*MAX_TURN_RATE*/);
+  byte_sent = segway_configure_max_turn_rate(socket, address, 2/*MAX_TURN_RATE*/);
 
   if(byte_sent <= 0)
     return -1;
@@ -325,7 +325,7 @@ int segway_read(int socket, union segway_union *segway_status, __u8 *data)
   if(bytes_read > 0)
   {
     // discard message that I can't handle it now
-    if(bytes_read == (bitmap_count * 4))
+    if(bytes_read == ((bitmap_count + 1) * 4))
     {
       //int i = 0;
       segway_config_update(udfb_data, segway_status);

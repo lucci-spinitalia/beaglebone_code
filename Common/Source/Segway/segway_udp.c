@@ -277,7 +277,7 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
 
   // Set max velocity
   //printf("segway_configure_max_vel\n");
-  byte_sent = segway_configure_max_vel(socket, address, 1/*MAX_VELOCITY*/);
+  byte_sent = segway_configure_max_vel(socket, address, 2/*MAX_VELOCITY*/);
 
   if(byte_sent <= 0)
     return -1;
@@ -295,7 +295,7 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
 
   // Set max deceleration
   //printf("segway_configure_max_decel\n");
-  byte_sent = segway_configure_max_decel(socket, address, 1/*MAX_DECELERATION*/);
+  byte_sent = segway_configure_max_decel(socket, address, 2/*MAX_DECELERATION*/);
 
   if(byte_sent <= 0)
     return -1;
@@ -322,7 +322,7 @@ int segway_init(int socket, struct sockaddr_in *address, union segway_union *seg
     
   // Set max turn rate
   //printf("segway_configure_max_turn_rate\n");
-  byte_sent = segway_configure_max_turn_rate(socket, address, 1/*MAX_TURN_RATE*/);
+  byte_sent = segway_configure_max_turn_rate(socket, address, 2.5/*MAX_TURN_RATE*/);
 
   if(byte_sent <= 0)
     return -1;

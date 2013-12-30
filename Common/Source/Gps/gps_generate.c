@@ -11,8 +11,8 @@
 #define DEVICE_NAME "gps_debug"
 
 nmeaINFO gps_generate_info;
-double latitude_start = 0;
-double longitude_start = 0;
+double latitude_last = 0;
+double longitude_last = 0;
 
 double Double2GpsCoord(double coordinate)
 {
@@ -68,8 +68,8 @@ void gps_generate_init(int signal, int fix, double lat, double lon, double speed
     nmea_info->satinfo.sat[i].in_use = 1;
   }
   
-  latitude_start = GpsCoord2Double(lat);
-  longitude_start = GpsCoord2Double(lon);
+  latitude_last = GpsCoord2Double(lat);
+  longitude_last = GpsCoord2Double(lon);
 }
 
 int gps_generate(float linear_velocity_km_h, float direction, long sample_rate_us, char *gps_message, nmeaINFO *info_scr)
@@ -77,7 +77,7 @@ int gps_generate(float linear_velocity_km_h, float direction, long sample_rate_u
   char buff[2048];
   int gen_sz;
   double delta_position = 0;
-  static double x, y;
+  double x, y;
   static int time_hs = 0;
   static int time_sec = 0;
   static int time_min = 0;
@@ -124,8 +124,8 @@ int gps_generate(float linear_velocity_km_h, float direction, long sample_rate_u
   //printf("Velocity: %f Yaw: %f\n", linear_velocity_km_h, yaw_rate_rps);
   // 1/60 di latitudine sono circa 1.8 km
   delta_position = ((linear_velocity_km_h / 3.6) * sample_rate_us) / 1000000; // [m]
-  x += delta_position * sin(direction * M_PI / 180);
-  y += delta_position * cos(direction  * M_PI / 180);
+  x = delta_position * sin(direction * M_PI / 180);
+  y = delta_position * cos(direction  * M_PI / 180);
 
   //printf("Gps X: %f  Y: %f delta: %f direction: %f\n", relative_x, relative_y, delta_position, relative_direction);
   //direction += (yaw_rate_rps * sample_rate_us) / 1000000;
@@ -172,8 +172,11 @@ int gps_generate(float linear_velocity_km_h, float direction, long sample_rate_u
   // lon2 = lon1_s + x * 180 / (pi * R * cos(lat1))
   //
   // In other word, x and y store the previouse distance plus the delta calculated here
-  nmea_info->lon = Double2GpsCoord(longitude_start + x * 180 / ((M_PI * 6367000) * cos(GpsCoord2Double(nmea_info->lat) * M_PI / 180)));
-  nmea_info->lat = Double2GpsCoord(latitude_start + y * 180 / (M_PI * 6367000));
+  longitude_last += x * 180 / ((M_PI * 6367000) * cos(GpsCoord2Double(nmea_info->lat) * M_PI / 180));
+  latitude_last += y * 180 / (M_PI * 6367000);
+  
+  nmea_info->lon = Double2GpsCoord(longitude_last);
+  nmea_info->lat = Double2GpsCoord(latitude_last);
 
   //printf("Generate lon: %f lat: %f Direction: %f\n",
   //       longitude_start + x * 180 / (3.14 * 6367000) * cos(GpsCoord2Double(nmea_info->lat) * 3.14 / 180),

@@ -86,6 +86,7 @@ typedef struct RTB_status {
     int complete;                   /**< Boolean showing if the module has reached the origin. */ 
     RTBvehicle_control control_values; /**< struct holding command values */ 
     RTB_FLOAT_TYPE distance;        /**< Float value telling the system the distance to the nearest point. */ 
+	RTB_FLOAT_TYPE distance_from_start; /**< Float value telling the system the distance to the start. */
     RTBvector control_vector;          /**< Vector holding the last control vector */
 } RTB_status;
     

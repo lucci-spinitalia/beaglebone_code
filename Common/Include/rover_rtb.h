@@ -86,7 +86,7 @@ extern "C" {
  * @see RTB_SAVE_DIST_TRSH
  * @see RTB_SAVE_DIST_ADAPTIVE_LONGITUDINAL
  */
-#define RTB_SAVE_DIST_ADAPTIVE_MAX_SPEED    0.5 //in meters per second: was 2.0
+#define RTB_SAVE_DIST_ADAPTIVE_MAX_SPEED    1 //in meters per second: was 2.0
 
 /** \brief RTB Record-mode adaptive saving distance, minimum speed
  *
@@ -107,7 +107,7 @@ extern "C" {
  * @see RTB_SAVE_DIST_TRSH
  * @see RTB_SAVE_DIST_ADAPTIVE_ANGULAR
  */
-#define RTB_SAVE_DIST_ADAPTIVE_ANGULAR_SENSITIVITY 2 //absolute
+#define RTB_SAVE_DIST_ADAPTIVE_ANGULAR_SENSITIVITY 4 //absolute
 
 
 /** \brief RTB Record-mode adaptive saving distance, maximum angular speed
@@ -118,7 +118,7 @@ extern "C" {
  * @see RTB_SAVE_DIST_TRSH
  * @see RTB_SAVE_DIST_ADAPTIVE_ANGULAR
  */
-#define RTB_SAVE_DIST_ADAPTIVE_MAX_ANGULAR_SPEED    0.8 //in radians per second
+#define RTB_SAVE_DIST_ADAPTIVE_MAX_ANGULAR_SPEED    2 //in radians per second
 
 /** \brief RTB Record-mode waypoint flushing distance threshold
  *
@@ -137,7 +137,7 @@ extern "C" {
  *  This value determines the distance from the current waypoint at which the
  * auto-guidance switches to the next waypoint.
  */
-#define RTB_GUIDE_CHANGE_DIST_TRSH  1.0
+#define RTB_GUIDE_CHANGE_DIST_TRSH  0.5
 
         
 /** \brief RTB Track-mode global update frequency
@@ -226,9 +226,16 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon);
  * @return a pointer to the current status
  * @see RTB_status, RTB_GEO_MODE
  */
-int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed);
+int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed, unsigned char *point_catch);
 
 //#if (RTB_GEO_MODE == RTB_GEO_MODE_EUCLIDEAN)
+/** \brief Clean cache
+ *
+ * \ingroup ReturnToBase      
+ *  This function must be called on program exit to clean
+ *  cache
+ */
+void RTB_internal_clean_cache(void);
 
 /** @struct RTB_point
  *  @brief Waypoint struct (Cartesian)
@@ -282,7 +289,7 @@ typedef struct RTB_point{
  * @brief Debug define. Set to 1 to enable.
  * \ingroup ReturnToBase  
  */
-#define DEBUG   1
+#define DEBUG   0
 
 /**
  * @brief Simulator define. Set to 1 to enable.

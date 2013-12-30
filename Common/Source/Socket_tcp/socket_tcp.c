@@ -5,8 +5,36 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netdb.h>
 
-void dostuff(int);
+int init_tcp_client(int *net_socket, const char *dest_addr, int dest_portnumber)
+{
+  struct sockaddr_in serv_addr;
+  struct hostent *server;
+
+  *net_socket = socket(AF_INET, SOCK_STREAM, 0);
+
+  if(net_socket < 0)
+    return -1;
+
+  server = gethostbyname(dest_addr);
+
+  if(server == NULL)
+    return -1;
+
+  bzero((char *) &serv_addr, sizeof(serv_addr));
+  serv_addr.sin_family = AF_INET;
+  bcopy((char *)server->h_addr, (char *)&serv_addr.sin_addr.s_addr,
+        server->h_length);
+
+  serv_addr.sin_port = htons(dest_portnumber);
+
+  if(connect(*net_socket, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0)
+    return -1;
+	
+  return 0;
+}
+/*void dostuff(int);
 
 void error(const char *msg)
 {
@@ -87,4 +115,4 @@ void dostuff(int sock)
 
   if(n < 0)
     error("ERROR writing to socket");
-}
+}*/
