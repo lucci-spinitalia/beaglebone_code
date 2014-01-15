@@ -1,0 +1,3 @@
+#!/bin/bash
+
+gcc -Wall kalman.c -lm -lgsl -lgslcblas -o kalman.o
