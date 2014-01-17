@@ -12,25 +12,29 @@
 #include <gsl/gsl_permutation.h>
 #include <gsl/gsl_linalg.h>
 
+#include "kalman.h"
+
 #undef max
 #define max(x,y) ((x) > (y) ? (x) : (y))
 
-#define DATA_PATH "gps_compare_log_final3.csv"
+#define DATA_PATH "gps_compare_log_final4.csv"
 
 double m_q[4]; //process error 4x4
 double m_r[4];  //measure error 2x2
 double m_p[4]; //predicted covariance matrix 4x4
 
 /* Position matrix
- * [  x     y  ]
- * [dx/dt dy/dt]
+ * [ x ]
+ * [ y ]
  */
-double m_x[2];  // x and y position and their velocity
-double m_u[2];
+double m_x[2];  // Current x and y position 
+double m_u[2];  // Input matrix. 
+
+//double error[2][2];
 
 double longitude, latitude;
-
-double error[2][2];
+double x_old = 0;
+double y_old = 0;
 
 void kalman_reset(double qx, double qy, double rx, double ry, double pd, double ix, double iy)
 { 
@@ -70,9 +74,16 @@ void kalman_reset(double qx, double qy, double rx, double ry, double pd, double 
  * [dx/dt dy/dt]   [0  1]   [dx/dt dy/dt]
  * 
  */
-void kalman_estimate(double delta_x, double delta_y)
+void kalman_estimate(double velocity_ms, double direction_deg, long time_us)
 {
-  int i,j;
+  int i;
+  //int j;
+  double delta_x, delta_y, delta_position;
+  
+  // Compute delta_x and delta_y from input
+  delta_position = velocity_ms * time_us / 1000000; // [m]
+  delta_x = delta_position * sin(direction_deg * M_PI / 180);
+  delta_y = delta_position * cos(direction_deg  * M_PI / 180);
   
   gsl_vector_view U = gsl_vector_view_array(m_u, 2);
   gsl_vector_view X = gsl_vector_view_array(m_x, 2);
@@ -94,18 +105,22 @@ void kalman_estimate(double delta_x, double delta_y)
     printf("%f ", gsl_vector_get(&X.vector, i));
     printf("]\n");
   }*/
+  
   m_u[0] = delta_x;
   m_u[1] = delta_y;
   
+  x_old = m_x[0];
+  y_old = m_x[1];
+  
   gsl_blas_daxpy(1.0, &U.vector, &X.vector);
 
-  printf("X estimate\n");
+  /*printf("X estimate\n");
   for(i = 0; i < X.vector.size; i++)
   {
     printf("[");
     printf("%f ", gsl_vector_get(&X.vector, i));
     printf("]\n");
-  }
+  }*/
   
   /* State prediction covariance
    * P(k+1|k) = F(k)P(k|k)F(k)'+ Q(k)
@@ -123,9 +138,34 @@ void kalman_estimate(double delta_x, double delta_y)
   }*/
 }
 
-void kalman_update(double x, double y)
+void kalman_update(double *lon, double *lat)
 {
   int i, j;
+  static double x_meas = 0;
+  static double y_meas = 0;
+  static double latitude = 0;
+  static double longitude = 0;
+  static double lat_old = 0;
+  static double lon_old = 0;
+  
+  if((longitude == 0) || (latitude == 0))
+  {
+	longitude = *lon;
+	latitude = *lat;
+	lat_old = *lat;
+	lon_old = *lon;
+  }
+  else
+  { 
+    //dx = R*(a2-a1)*(pi/180)*cos(b1)
+    x_meas += 6367000 * (*lon - lon_old) * (M_PI / 180) * cos(lat_old * M_PI / 180);
+
+    //dy = R*(b2-b1)*pi/180
+    y_meas += 6367000 * (*lat - lat_old) * M_PI / 180;
+
+    lon_old = *lon;
+    lat_old = *lat;
+  }
   
   gsl_vector_view X = gsl_vector_view_array(m_x, 2);
   gsl_matrix_view P = gsl_matrix_view_array(m_p, 2, 2);
@@ -142,18 +182,18 @@ void kalman_update(double x, double y)
   gsl_permutation *S_perm = gsl_permutation_alloc(2);
   
   // Measurement residual  = new_measure - H x
-  gsl_vector_set(masure_residual, 0, x);
-  gsl_vector_set(masure_residual, 1, y);
+  gsl_vector_set(masure_residual, 0, x_meas);
+  gsl_vector_set(masure_residual, 1, y_meas);
   
   gsl_vector_sub(masure_residual, &X.vector);
   
-  printf("Measure Residual\n");
+  /*printf("Measure Residual\n");
   for(i = 0; i < masure_residual->size; i++)
   {
     printf("[");
     printf("%f ", gsl_vector_get(masure_residual, i));
     printf("]\n");
-  }
+  }*/
   
   /* Measurement prediction covariance
    * S = H P H' + R 
@@ -199,14 +239,21 @@ void kalman_update(double x, double y)
   // Update state estimate
   gsl_blas_dgemv(CblasNoTrans, 1.0, W, masure_residual, 1.0, &X.vector);
   
-  printf("X update\n");
+  /*printf("X update\n");
   for(i = 0; i < X.vector.size; i++)
   {
     printf("[");
     printf("%f ", gsl_vector_get(&X.vector, i));
     printf("]\n");
-  }
+  }*/
   
+  /* (a2 - a1) = dx * 180 / (R * pi * cos(b1))*/
+  longitude += (m_x[0] - x_old) * 180 / (M_PI * 6367000 * cos(latitude * M_PI / 180));
+  latitude += (m_x[1] - y_old) * 180 / (M_PI * 6367000);
+	
+  // Return corrected position
+  *lon = longitude;
+  *lat = latitude;
   
   /*Update state covariance
    * P = P - W S W'
@@ -224,22 +271,16 @@ void kalman_update(double x, double y)
 }
 
 
-int read_gps_data(const char *file_path, double *x, double *y, double *velocity, double *direction, long *time)
+int read_gps_data(const char *file_path, double *lon, double *lat, double *velocity, double *direction, long *time)
 {  
   FILE *file = NULL;
   char *line = NULL;
   size_t len = 0;
   ssize_t read;
   static int cursor_position = 0;
-  static double x_old = 0;
-  static double y_old = 0;
-  static double lon_old = 0;
-  static double lat_old = 0;
   
   char *token;
   int count = 0;
-  
-  double lon, lat;
   
   // Init Log File
   file = fopen(file_path, "r");
@@ -264,12 +305,12 @@ int read_gps_data(const char *file_path, double *x, double *y, double *velocity,
       switch(count)
       {
 	case 0:
-	  lon = atof(token);
+	  *lon = atof(token);
 	  //printf("lon: %f\t", lon);
 	  break;
 	  
 	case 1:
-	  lat = atof(token);
+	  *lat = atof(token);
 	  //printf("lat: %f\n", lat);
 	  break;
 	  
@@ -295,29 +336,6 @@ int read_gps_data(const char *file_path, double *x, double *y, double *velocity,
       token = strtok(NULL,",\n");
       count++;
     }
-
-    if(cursor_position == 0)
-    {
-      *x = 0;
-      *y = 0;
-      lon_old = lon;
-      lat_old = lat;
-      longitude = lon;
-      latitude = lat;
-    }
-    else
-    {
-      //dx = R*(a2-a1)*(pi/180)*cos(b1)
-      *x = x_old + 6367000 * (lon - lon_old) * (M_PI / 180) * cos(lat_old * M_PI / 180);
-      
-      //dy = R*(b2-b1)*pi/180
-      *y = y_old + 6367000 * (lat - lat_old) * M_PI / 180;
-      
-      x_old = *x;
-      y_old = *y;
-      lon_old = lon;
-      lat_old = lat;
-    }
     
     //printf("X: %f\tY: %f\n", *x, *y);
     
@@ -342,7 +360,7 @@ void write_gps_data(double latitude, double longitude)
   FILE *file = NULL;
 
   // Init Log File
-  file = fopen("gps_data_kalman_q0001_r1", "a");
+  file = fopen("gps_data_kalman_q0001_r2", "a");
   
   if(!file)
   {
@@ -355,7 +373,7 @@ void write_gps_data(double latitude, double longitude)
   fclose(file);
 }
 
-void signal_handler(int signum)
+/*void signal_handler(int signum)
 {
   // Garbage collection
   printf("Terminating program...\n");
@@ -366,45 +384,25 @@ void signal_handler(int signum)
 
 int main()
 {
-  int i;
-  double x, y, x_old, y_old, velocity_ms, direction_deg;
-  double delta_x, delta_y, delta_position;
+  double lon, lat, velocity_ms, direction_deg;
   long time_us;
-
- /* int select_result = -1; // value returned from select()
-  int nfds = 0; // fd to pass to select()
-  struct timeval select_timeout;
-  
-  select_timeout.tv_sec = 0;
-  select_timeout.tv_usec = 250000;*/
   
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
    
   // Init kalman filter
   //(double qx, double qy, double rx, double ry, double pd, double ix, double iy, double iux, double iuy)
-  kalman_reset(0.0001, 0.0001, 1, 1, 0.01, 0, 0);
+  kalman_reset(0.0001, 0.0001, 2, 2, 0.01, 0, 0);
   
-  while(read_gps_data(DATA_PATH, &x, &y, &velocity_ms, &direction_deg, &time_us))
-  {
-    x_old = m_x[0];
-    y_old = m_x[1];
-  
-    delta_position = velocity_ms * time_us / 1000000; // [m]
-    delta_x = delta_position * sin(direction_deg * M_PI / 180);
-    delta_y = delta_position * cos(direction_deg  * M_PI / 180);
+  while(read_gps_data(DATA_PATH, &lon, &lat, &velocity_ms, &direction_deg, &time_us))
+  {  
+    kalman_estimate(velocity_ms, direction_deg, time_us);
+    kalman_update(&lon, &lat);
     
-    kalman_estimate(delta_x, delta_y); 
-    kalman_update(x, y);
-
-    /* (a2 - a1) = dx * 180 / (R * pi * cos(b1))*/
-    longitude += (m_x[0] - x_old) * 180 / (M_PI * 6367000 * cos(latitude * M_PI / 180));
-    latitude += (m_x[1] - y_old) * 180 / (M_PI * 6367000);
-    
-    write_gps_data(latitude, longitude);
+    write_gps_data(lat, lon);
     printf("\n");
   }
 
   return 0;
-}
+}*/
 

@@ -10,6 +10,7 @@
 #include <signal.h>
 
 #include "lms511_tcp.h"
+#include "segway_config.h" // To use convert_to_float function
 
 #define LMS511_ADDRESS "192.168.1.104"
 #define LMS511_PORT 2111
@@ -43,10 +44,10 @@ unsigned int lms511_buffer_rx_data_count;
 unsigned int lms511_count; // var for loop only
 struct LMS511_INFO lms511_info;
 
-float convert_to_float(__u32 value)
+/*float convert_to_float(__u32 value)
 {
   return (*((float *)&value));
-}
+}*/
 
 int lms511_open(int *socket, struct sockaddr_in *address, char *ip_address, int dest_port)
 {
@@ -465,7 +466,7 @@ int lms511_parse(int socket_lms511)
   return bytes_read;
 }
 
-void signal_handler(int signum)
+/*void signal_handler(int signum)
 {
   // Garbage collection
   printf("Terminating program...\n");
@@ -492,7 +493,7 @@ int main()
   signal(SIGINT, signal_handler);
   signal(SIGTERM, signal_handler);
   
-  /* Init lms511 Client */  
+  // Init lms511 Client  
   if(lms511_open(&socket_lms511, &lms511_address, LMS511_ADDRESS, LMS511_PORT) == -1)
   {
     perror("init lms511 client");
@@ -612,7 +613,7 @@ int main()
   }
   
   return 0;
-}
+}*/
 
 void lms511_dispose()
 {

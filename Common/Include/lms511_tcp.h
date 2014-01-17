@@ -53,5 +53,7 @@ int lms511_send(int device, struct sockaddr_in *dest_address);
 int lms511_read(int device);
 int lms511_init();
 void lms511_dispose();
+int lms511_parse(int socket_lms511);
+int lms511_send_command(char *command);
 
 #endif
