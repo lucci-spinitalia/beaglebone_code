@@ -179,7 +179,25 @@ extern "C" {
 #define RTB_MIN_WAYPOINT_DIST       1.0 // meters
     
         
+ /** @struct RTB_point
+ *  @brief Waypoint struct (Cartesian)
+ * \ingroup ReturnToBase
+ * 
+ * Used in a list, each element holds essential information for the waypoints acquired during operation.
+ *  @param x Member 'x' contains the X value of the point.
+ *  @param y Member 'y' contains the Y value of the point.
+ *  @param distance_from_start Member 'distance_from_start' contains the distance of the point from the origin.
+ *  @param next Member 'next' contains a pointer to the next waypoint (farther from the origin).
+ *  @param previous Member 'previous' contains a pointer to the previous waypoint (nearer to the origin).
+ */
+typedef struct RTB_point{
+    RTB_FLOAT_TYPE x;                   /**< RTB_FLOAT_TYPE contains the X value of the point. */ 
+    RTB_FLOAT_TYPE y;                   /**< RTB_FLOAT_TYPE contains the Y value of the point. */ 
+    RTB_FLOAT_TYPE distance_from_start; /**< RTB_FLOAT_TYPE contains the distance of the point from the origin. */ 
+    struct RTB_point* next;             /**< RTB_point* contains a pointer to the next waypoint (farther from the origin). */ 
+    struct RTB_point* previous;         /**< RTB_point* contains a pointer to the previous waypoint (nearer to the origin). */ 
     
+} RTB_point;
     
 /** \brief RTB initialization call
  *
@@ -210,7 +228,7 @@ void RTB_set_mode(RTB_mode);
  * @return void
  * @see RTB_update
  */
-void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon);
+void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon, RTB_point *new_point);
 
 /** \brief RTB main cycle handler
  *
@@ -236,26 +254,6 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
  *  cache
  */
 void RTB_internal_clean_cache(void);
-
-/** @struct RTB_point
- *  @brief Waypoint struct (Cartesian)
- * \ingroup ReturnToBase
- * 
- * Used in a list, each element holds essential information for the waypoints acquired during operation.
- *  @param x Member 'x' contains the X value of the point.
- *  @param y Member 'y' contains the Y value of the point.
- *  @param distance_from_start Member 'distance_from_start' contains the distance of the point from the origin.
- *  @param next Member 'next' contains a pointer to the next waypoint (farther from the origin).
- *  @param previous Member 'previous' contains a pointer to the previous waypoint (nearer to the origin).
- */
-typedef struct RTB_point{
-    RTB_FLOAT_TYPE x;                   /**< RTB_FLOAT_TYPE contains the X value of the point. */ 
-    RTB_FLOAT_TYPE y;                   /**< RTB_FLOAT_TYPE contains the Y value of the point. */ 
-    RTB_FLOAT_TYPE distance_from_start; /**< RTB_FLOAT_TYPE contains the distance of the point from the origin. */ 
-    struct RTB_point* next;             /**< RTB_point* contains a pointer to the next waypoint (farther from the origin). */ 
-    struct RTB_point* previous;         /**< RTB_point* contains a pointer to the previous waypoint (nearer to the origin). */ 
-    
-} RTB_point;
 
 //#elif (RTB_GEO_MODE == RTB_GEO_MODE_LATLON)
 

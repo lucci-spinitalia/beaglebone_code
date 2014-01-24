@@ -215,8 +215,9 @@ void RTB_internal_flush(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy)
   }
 }
 
-void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon)
+void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon, RTB_point *new_point)
 {
+  RTB_point *local_previouse_point;
   RTB_point *local_current_point;
   RTB_point *local_start_point;
   
@@ -228,10 +229,10 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon)
   
   while(local_current_point->previous != NULL)
   {
-    printf("Previouse point x: %f y: %f\n", local_start_point->x, local_start_point->y);
+    //printf("Previouse point x: %f y: %f\n", local_start_point->x, local_start_point->y);
     local_current_point->x = new_lon - local_start_point->x;
     local_current_point->y = new_lat - local_start_point->y;
-    printf("Current point x: %f y: %f\n", local_current_point->x, local_current_point->y);
+    //printf("Current point x: %f y: %f\n", local_current_point->x, local_current_point->y);
     
     local_current_point = local_current_point->previous;
     local_start_point = local_start_point->next;
@@ -240,7 +241,7 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon)
   local_current_point->x = new_lon - local_start_point->x;
   local_current_point->y = new_lat - local_start_point->y;
   
-  local_start_point = RTB_internal_point_start;
+  /*local_start_point = RTB_internal_point_start;
   while(local_start_point->next != NULL)
   {
     printf("Traslate Point lat: %f lon: %f\n", local_start_point->y, local_start_point->x);
@@ -248,7 +249,32 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon)
     local_start_point = local_start_point->next;
   }
   
-  printf("Traslate Point lat: %f lon: %f\n", local_start_point->y, local_start_point->x);
+  printf("Traslate Point lat: %f lon: %f\n", local_start_point->y, local_start_point->x);*/
+ 
+  new_point = malloc(sizeof(RTB_point));
+  new_point->x = local_start_point->x;
+  new_point->y = local_start_point->y;
+  new_point->distance_from_start = local_start_point->distance_from_start;
+  new_point->next=NULL;
+  new_point->previous=NULL;
+  
+  local_current_point = new_point;
+  local_start_point = RTB_internal_point_start;
+  
+  while(local_start_point->next != NULL)
+  {
+    local_previouse_point = local_current_point;
+    local_current_point->next = malloc(sizeof(RTB_point));
+    local_current_point = local_current_point->next;
+    local_current_point->previous = local_current_point;
+    local_current_point->next = NULL;
+    local_current_point->x = local_start_point->x;
+    local_current_point->y = local_start_point->y;
+    local_current_point->distance_from_start = local_start_point->distance_from_start;
+		
+    local_start_point = local_start_point->next;
+  }
+
 }
 
 int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed, unsigned char *point_catch)

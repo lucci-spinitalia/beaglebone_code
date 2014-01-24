@@ -226,7 +226,7 @@ void kalman_update(double *lon, double *lat)
   
   gsl_blas_dgemm(CblasNoTrans, CblasNoTrans, 1.0, &P.matrix, S_inv, 0.0, W);
   
-  printf("Kalman Gain\n");
+  /*printf("Kalman Gain\n");
   for(i = 0; i < W->size1; i++)
   {
     printf("[");
@@ -234,7 +234,7 @@ void kalman_update(double *lon, double *lat)
       printf("%f ", gsl_matrix_get(W, i, j));
     
     printf("]\n");
-  }
+  }*/
   
   // Update state estimate
   gsl_blas_dgemv(CblasNoTrans, 1.0, W, masure_residual, 1.0, &X.vector);
