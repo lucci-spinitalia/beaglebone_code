@@ -49,7 +49,7 @@ typedef struct {
  * @param norm              RTB_FLOAT_TYPE holding the norm of the vector
  */
 typedef struct {
-    RTB_FLOAT_TYPE x;               /**< RTB_FLOAT_TYPE holding the X value. */ 
+    RTB_FLOAT_TYPE x;               /**< RTB_FLOAT_TYPE holding the X value or the longitude. */ 
     RTB_FLOAT_TYPE y;               /**< RTB_FLOAT_TYPE holding the Y value. */ 
     RTB_FLOAT_TYPE angle_rad;       /**< RTB_FLOAT_TYPE holding the angle in radians (math orientation. */ 
     RTB_FLOAT_TYPE angle_deg_north; /**< RTB_FLOAT_TYPE holding the angle in degrees true north. */ 

@@ -5,6 +5,7 @@
 #include <math.h>
 #include "rover_rtb.h"
 #include "rover_plan.h"
+#include "rover_obstacle_avoidance.h"
 
 #if (SIMUL == 1)
 #include "rover_video.h"
@@ -105,6 +106,8 @@ void RTB_internal_clean_cache(void)
   RTB_internal_point_actual = NULL;
   RTB_internal_point_last = NULL;
   RTB_internal_point_start = NULL;
+  
+  OA_cleanup();
 }
 
 void RTB_init(void)
@@ -277,9 +280,13 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon, RTB_poin
 
 }
 
-int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed, unsigned char *point_catch)
+int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed, 
+               unsigned char obstacle_avoid_enable, unsigned int *sensor_reading, unsigned int reading_number,
+			   unsigned char *point_catch)
 {
   RTB_FLOAT_TYPE distance_point2point;
+  RTB_status desired_direction;
+  
 #if (DEBUG == 1)
   //printf("aspeed: %f\n", aspeed);      
   //printf("xspeed: %f\n", xspeed);
@@ -449,7 +456,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
       break;
     
     case RTB_tracking:
-   
+      desired_direction = RTBstatus;
       //At every point check if i'm near the start
 /*      if(RTB_internal_getdistance(localx, localy, RTB_internal_point_start->x, RTB_internal_point_start->y) < RTB_GUIDE_CHANGE_DIST_TRSH)
       {
@@ -473,7 +480,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
 #endif
       }*/
   
-      if (RTB_internal_point_actual == RTB_internal_point_start)
+      if(RTB_internal_point_actual == RTB_internal_point_start)
       {
         /*RTBstatus.control_vector.x=0;
           RTBstatus.control_vector.y=0;
@@ -487,14 +494,14 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
         return RTBstatus.mode;
       }
            
-      RTBstatus.distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_actual->previous->x, RTB_internal_point_actual->previous->y);
-	  RTBstatus.distance_from_start = RTB_internal_getdistance(localx, localy, RTB_internal_point_start->x, RTB_internal_point_start->y);
+      desired_direction.distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_actual->previous->x, RTB_internal_point_actual->previous->y);
+	  desired_direction.distance_from_start = RTB_internal_getdistance(localx, localy, RTB_internal_point_start->x, RTB_internal_point_start->y);
 	  
 #if (DEBUG == 1)
       printf("Current x: %f Current y: %f Previouse x: %f Previouse y: %f\n", localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y);
       printf("Get distance: %f, Distance Threshold: %f\n", RTBstatus.distance, RTB_internal_distance_threshold);
 #endif
-      if(RTBstatus.distance <= RTB_GUIDE_CHANGE_DIST_TRSH && RTB_internal_point_actual->previous != NULL)
+      if(desired_direction.distance <= RTB_GUIDE_CHANGE_DIST_TRSH && RTB_internal_point_actual->previous != NULL)
       {
 #if (DEBUG == 1)
         printf("Point reached\n");
@@ -510,6 +517,8 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
         {
           RTBstatus.control_values.heading = 0;
           RTBstatus.control_values.speed = 0;
+		  RTBstatus.distance = desired_direction.distance;
+		  RTBstatus.distance_from_start = desired_direction.distance_from_start;
 #if (DEBUG == 1)
           printf("Origin reached\n"); 
 #endif
@@ -521,28 +530,21 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
       rtb_video_take_current_position(localx, localy);
 #endif
       
-      distance_point2point = RTB_internal_getdistance(RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y,RTB_internal_point_actual->x,RTB_internal_point_actual->y);
-      
-      if(RTB_internal_point_actual->next == NULL)
-      {
-        RTBstatus.control_vector = lucciPLAN_givedir_multiparam(localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y);
+      distance_point2point = RTB_internal_getdistance(RTB_internal_point_actual->previous->x, RTB_internal_point_actual->previous->y,
+	                                                  RTB_internal_point_actual->x, RTB_internal_point_actual->y);
+
+	  // Take a direction vector normalize to 1
+      desired_direction.control_vector = lucciPLAN_givedir_multiparam(localx, localy, RTB_internal_point_actual->previous->x, RTB_internal_point_actual->previous->y);
         
-        if(distance_point2point < 2.0)
-          RTBstatus.control_vector = lucciSERVICE_vect_set_norm(0.4,RTBstatus.control_vector);
-        else
-          RTBstatus.control_vector = lucciSERVICE_vect_set_norm(1.0,RTBstatus.control_vector);
-      }
-      else
-      {
-        if(distance_point2point < 2.0)
-          RTBstatus.control_vector = lucciSERVICE_vect_set_norm(0.4,lucciPLAN_givedir_multiparam(localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y));
-        else
-        {
-          //calcola la congiungente tra i due punti
-          RTBstatus.control_vector = lucciSERVICE_vect_set_norm(1.0,lucciPLAN_givedir_multiparam(localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y));
-        }
-      } 
-            
+      if(distance_point2point < 2.0)
+        desired_direction.control_vector = lucciSERVICE_vect_set_norm(0.4, desired_direction.control_vector);
+
+	  // if enabled it will change the control vector to avoid obstacles
+      if(obstacle_avoid_enable == 1)
+        RTBstatus.control_vector = OA_perform_avoidance(sensor_reading, reading_number, RTBstatus.control_vector, desired_direction.control_vector);
+	  else  
+        RTBstatus = desired_direction;
+	  
 #if (DEBUG==1)
       //printf("X: %f   Y: %f    Angle: %f rad    Angle to north: %f deg   Norm: %f\n", RTBstatus.control_vector.x, RTBstatus.control_vector.y, RTBstatus.control_vector.angle_rad, RTBstatus.control_vector.angle_deg_north, RTBstatus.control_vector.norm);
 #endif

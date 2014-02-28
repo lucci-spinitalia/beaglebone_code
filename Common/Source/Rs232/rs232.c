@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <linux/serial.h>
 
 #include "rs232.h"
 
@@ -16,7 +17,7 @@
 #define FALSE 0
 #define TRUE 1
 
-volatile int STOP=FALSE;
+volatile int STOP = FALSE;
 
 /* Prototype */
 int com_open(char *, __u32, char, int, int);
@@ -73,11 +74,14 @@ int com_open(char *device_name, __u32 rate, char parity,
   rs232_buffer_rx_overrun = 0;
   rs232_buffer_rx_data_count = 0;
   
-  fd = open(device_name, O_RDWR | O_NOCTTY);
+  fd = open(device_name, O_RDWR | O_NOCTTY | O_NONBLOCK);
 
   if(fd < 0)
     return fd;
 
+  if(!isatty(fd))
+    printf("Not a serial device\n");
+    
   // Check fo valid values
   upper_parity = toupper(parity);
 
@@ -130,18 +134,58 @@ int com_open(char *device_name, __u32 rate, char parity,
     } 
 
 
-    tcgetattr(fd, &oldtio); //save current port settings
-    bzero(&newtio, sizeof(newtio));
-    newtio.c_cflag = local_rate | local_databits | local_stopbits | local_parity | CLOCAL | CREAD;
-    newtio.c_iflag = IGNPAR;
-    newtio.c_oflag = 0;
+    if(tcgetattr(fd, &oldtio) < 0)  //save current port settings
+      return -1;
 
-    newtio.c_lflag = 0;
+    bzero(&newtio, sizeof(newtio));
+    
+    //
+    // Turn off character processing
+    // clear current char size mask, no parity checking,
+    // no output processing, force 8 bit input
+    //
+    newtio.c_cflag &= ~(CSIZE | PARENB) | local_rate | local_databits | local_stopbits | local_parity | CLOCAL | CREAD;;
+    newtio.c_cflag |= CS8;
+    
+    //
+    // Input flags - Turn off input processing
+    // convert break to null byte, no CR to NL translation,
+    // no NL to CR translation, don't mark parity errors or breaks
+    // no input parity check, don't strip high bit off,
+    // no XON/XOFF software flow control
+    //
+    newtio.c_iflag &= ~(IGNPAR | IGNBRK | ICRNL | INLCR |
+                        ISTRIP | IXON | IXOFF | IXANY| IGNCR) | BRKINT | PARMRK | INPCK;
+    
+    //
+    // Output flags - Turn off output processing
+    // no CR to NL translation, no NL to CR-NL translation,
+    // no NL to CR translation, no column 0 CR suppression,
+    // no Ctrl-D suppression, no fill characters, no case mapping,
+    // no local output processing
+    // 
+    // config.c_oflag &= ~(OCRNL | ONLCR | ONLRET |
+    //                     ONOCR | ONOEOT| OFILL | OLCUC | OPOST);
+    newtio.c_oflag &= ~OPOST;
+
+    //
+    // No line processing:
+    // echo off, echo newline off, canonical mode off, 
+    // extended input processing off, signal chars off
+    //
+    newtio.c_lflag &= ~(ECHO | ECHONL | ECHOE | ICANON | IEXTEN | ISIG);
+    
+    //newtio.c_lflag = 0;
     newtio.c_cc[VTIME] = 0; //inter-character timer unused
     newtio.c_cc[VMIN] = 1; //blocking read until 5 chars received
 
     tcflush(fd, TCIFLUSH);
-    tcsetattr(fd, TCSANOW, &newtio);
+    
+    if(cfsetispeed(&newtio, local_rate) < 0 || cfsetospeed(&newtio, local_rate) < 0) 
+      return -1;
+
+    if(tcsetattr(fd, TCSANOW, &newtio) < 0)
+      return -1;
 
     return fd;
   }
@@ -161,7 +205,6 @@ void flush_device_output(int *device)
 {
   tcflush(*device, TCOFLUSH);
 }
-
 
 int rs232_buffer_tx_get_space(void)
 {
@@ -209,10 +252,12 @@ int rs232_load_tx(unsigned char *data, unsigned int data_length)
   return 1;
 }
 
+// TODO: adattare la funzione per prendere più dati possibili (vedi rs232_unload_rx_unload_filtered)
 int rs232_unload_rx(unsigned char *data)
 {
   int length_to_write = 0;
 
+  printf("rs232_unload_rx start\n");
   if(rs232_buffer_rx_empty)
     return 0;
 
@@ -232,13 +277,17 @@ int rs232_unload_rx(unsigned char *data)
 
   rs232_buffer_rx_ptr_rd += length_to_write;
 
-  if(rs232_buffer_rx_ptr_rd == RS232_BUFFER_SIZE)
-    rs232_buffer_rx_ptr_rd = 0;
+  if(rs232_buffer_rx_ptr_rd >= RS232_BUFFER_SIZE)
+    rs232_buffer_rx_ptr_rd -= RS232_BUFFER_SIZE;
+
+  //if(rs232_buffer_rx_ptr_rd == RS232_BUFFER_SIZE)
+  // rs232_buffer_rx_ptr_rd = 0;
 
 //  printf("\nempty: %i, data_count: %i\n", rs232_buffer_rx_empty,rs232_buffer_rx_data_count);
 //  printf("full: %i, rd pointer: %i\n", rs232_buffer_rx_full, rs232_buffer_rx_ptr_rd);
 //  printf("\n");
 
+  printf("rs232_unload_rx stop\n");
   return length_to_write;
 }
 
@@ -255,26 +304,51 @@ int rs232_unload_rx_filtered(char *data, char token)
  
   if(rs232_buffer_rx_ptr_rd < rs232_buffer_rx_ptr_wr)
   {
-    memcpy(rs232_buffer_rx_temp, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], rs232_buffer_rx_ptr_wr - rs232_buffer_rx_ptr_rd);
-    rs232_buffer_rx_temp[rs232_buffer_rx_ptr_wr - rs232_buffer_rx_ptr_rd] = '\0';
-    token_ptr = strrchr(rs232_buffer_rx_temp, token);
-    
-    if(token_ptr == NULL)
-      return 0;
-    else
-    {
-      length_to_write = (token_ptr - rs232_buffer_rx_temp);
-      //printf("String: %s\n", rs232_buffer_rx_temp);
-    }
-    
-    memcpy(data, rs232_buffer_rx_temp, length_to_write);
+    length_to_write = rs232_buffer_rx_ptr_wr - rs232_buffer_rx_ptr_rd;
+    memcpy(rs232_buffer_rx_temp, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+    rs232_buffer_rx_temp[length_to_write] = '\0';
   }
   else
   {
     length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_rd);
-    memcpy(data, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+    memcpy(rs232_buffer_rx_temp, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+    //printf("Copy first part...rd: %i bytes: %i\n",rs232_buffer_rx_ptr_rd, length_to_write);
+    memcpy(&rs232_buffer_rx_temp[length_to_write], &rs232_buffer_rx, rs232_buffer_rx_ptr_wr);
+    //printf("Copy second part...buffer rd: %i bytes: %i\n", length_to_write, rs232_buffer_rx_ptr_wr);
+    
+    length_to_write = length_to_write + rs232_buffer_rx_ptr_wr;
+    rs232_buffer_rx_temp[length_to_write] = '\0';
+    
+    //printf("Rs232 rd string: %s\n", rs232_buffer_rx_temp);
   }
-	    //printf("rs232_buffer_rx_ptr_rd: %i, rs232_buffer_rx_ptr_wr: %i \n", rs232_buffer_rx_ptr_rd, rs232_buffer_rx_ptr_wr);
+  
+  token_ptr = strchr(rs232_buffer_rx_temp, token);
+  
+  //printf("token_ptr: %p Buffer: %s\n", token_ptr, rs232_buffer_rx_temp);
+  if(token_ptr == NULL)
+    return 0;
+  else
+  {
+    length_to_write = (token_ptr - rs232_buffer_rx_temp + 1);
+    
+    token_ptr = strchr(rs232_buffer_rx_temp, '\377');
+  
+    // if received a framing error then discard the whole message
+    if(token_ptr == NULL)
+      memcpy(data, rs232_buffer_rx_temp, length_to_write);
+    else
+    {
+      rs232_buffer_rx_temp[token_ptr - rs232_buffer_rx_temp] = '\0';
+      strcat(rs232_buffer_rx_temp, &rs232_buffer_rx_temp[token_ptr  - rs232_buffer_rx_temp + 1]);
+      
+      memcpy(data, rs232_buffer_rx_temp, strlen(rs232_buffer_rx_temp));
+      //printf("Rs232 Frame error: %s\nat %i and long %i\n", rs232_buffer_rx_temp, token_ptr - rs232_buffer_rx_temp, strlen(rs232_buffer_rx_temp));
+    }
+
+    //printf("Rs232 string: %s\n", rs232_buffer_rx_temp);
+  }
+
+	//printf("rs232_buffer_rx_ptr_rd: %i, rs232_buffer_rx_ptr_wr: %i \n", rs232_buffer_rx_ptr_rd, rs232_buffer_rx_ptr_wr);
   rs232_buffer_rx_data_count -= length_to_write;
 
   if(rs232_buffer_rx_data_count == 0)
@@ -282,19 +356,24 @@ int rs232_unload_rx_filtered(char *data, char token)
 
   rs232_buffer_rx_ptr_rd += length_to_write;
 
-  if(rs232_buffer_rx_ptr_rd == RS232_BUFFER_SIZE)
-    rs232_buffer_rx_ptr_rd = 0;
-
-//  printf("\nempty: %i, data_count: %i\n", rs232_buffer_rx_empty,rs232_buffer_rx_data_count);
-//  printf("full: %i, rd pointer: %i\n", rs232_buffer_rx_full, rs232_buffer_rx_ptr_rd);
-//  printf("\n");
-
-  return length_to_write;
+  if(rs232_buffer_rx_ptr_rd >= RS232_BUFFER_SIZE)
+  {
+    //printf("Buffer rx ptr rd: %i of %i\tBytes read: %i\n", rs232_buffer_rx_ptr_rd, RS232_BUFFER_SIZE, length_to_write);
+    rs232_buffer_rx_ptr_rd -= RS232_BUFFER_SIZE;
+    //printf("Buffer rx ptr rd After: %i of %i\n", rs232_buffer_rx_ptr_rd, RS232_BUFFER_SIZE);
+  }
+  
+  if((token_ptr != NULL) && ((token_ptr - rs232_buffer_rx_temp) <= length_to_write))
+    //return -2;
+   return strlen(rs232_buffer_rx_temp);
+  else
+    return length_to_write;
 }
 
 int rs232_read(int rs232_device)
 {
   int bytes_read = -1;
+  char rs232_buffer_rx_temp[RS232_BUFFER_SIZE];
 
   if(rs232_buffer_rx_full)
   {
@@ -307,7 +386,22 @@ int rs232_read(int rs232_device)
     // I want to read as many bytes as possible, but I have to manage the
     // circular buffer. So I can read only the data before restart the
     // buffer.
-    bytes_read = read(rs232_device, &rs232_buffer_rx[rs232_buffer_rx_ptr_wr], (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr));
+    //bytes_read = read(rs232_device, &rs232_buffer_rx[rs232_buffer_rx_ptr_wr], (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr));
+    bytes_read = read(rs232_device, rs232_buffer_rx_temp, rs232_buffer_rx_get_space());
+  
+    if((RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr) >= bytes_read)
+      memcpy(&rs232_buffer_rx[rs232_buffer_rx_ptr_wr], rs232_buffer_rx_temp, bytes_read);
+    else
+    {
+      //printf("Buffer reset-------------------------------------------------------------->\n");
+      memcpy(&rs232_buffer_rx[rs232_buffer_rx_ptr_wr], rs232_buffer_rx_temp, (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr));
+      //printf("Copy first part...wr: %i bytes: %i\n",rs232_buffer_rx_ptr_wr, (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr));
+      memcpy(rs232_buffer_rx, &rs232_buffer_rx_temp[RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr], bytes_read - (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr));
+      //printf("Copy second part...buffer: %i bytes: %i\n", RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr, bytes_read - (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_wr));
+    }
+    
+    //rs232_buffer_rx_temp[bytes_read] = '\0';
+    //printf("Rs232 read: %s \nWrite pointer: %i Bytes read: %i\n", rs232_buffer_rx_temp, rs232_buffer_rx_ptr_wr, bytes_read);
     
     if(bytes_read > 0)
     {
@@ -319,8 +413,12 @@ int rs232_read(int rs232_device)
 
       rs232_buffer_rx_ptr_wr += bytes_read;
 
-      if(rs232_buffer_rx_ptr_wr == RS232_BUFFER_SIZE)
-        rs232_buffer_rx_ptr_wr = 0;
+      if(rs232_buffer_rx_ptr_wr >= RS232_BUFFER_SIZE)
+      {
+        //printf("Buffer rx ptr wr: %i of %i\tBytes read: %i\n", rs232_buffer_rx_ptr_wr, RS232_BUFFER_SIZE, bytes_read);
+        rs232_buffer_rx_ptr_wr -= RS232_BUFFER_SIZE;
+        //printf("Buffer rx ptr wr After: %i of %i\n", rs232_buffer_rx_ptr_wr, RS232_BUFFER_SIZE);
+      }
     }
   }
 

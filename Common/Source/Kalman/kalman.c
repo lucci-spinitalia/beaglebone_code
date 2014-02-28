@@ -76,7 +76,7 @@ void kalman_reset(double qx, double qy, double rx, double ry, double pd, double 
  */
 void kalman_estimate(double velocity_ms, double direction_deg, long time_us)
 {
-  int i;
+  //int i;
   //int j;
   double delta_x, delta_y, delta_position;
   

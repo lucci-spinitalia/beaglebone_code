@@ -7,7 +7,8 @@
 #include <stdio.h> 
 #include <stdlib.h> 
 #include <unistd.h>
- 
+#include <math.h>
+
 #include <errno.h>
 #include <string.h>
 #include <locale.h>
@@ -60,7 +61,10 @@ int main(int argc, char**argv)
   int socket_arm = -1;
   struct sockaddr_in arm_address;
   struct arm_frame arm_buffer_temp;
-
+  double arm_tetha0, arm_y, arm_z;
+  unsigned char arm_request_index;
+  char *arm_token_result;
+  
   /* Status client interface*/
   int socket_status = -1;
   struct sockaddr_in socket_status_addr_dest;
@@ -92,6 +96,11 @@ int main(int argc, char**argv)
     perror("init arm client");
   else
   {
+    arm_buffer_temp.arm_command_param.count = 0;
+    arm_buffer_temp.arm_command_param.crc[0] = 0;
+    arm_buffer_temp.arm_command_param.crc[1] = 0;
+    arm_crc_initialize();
+    
     if(arm_init(0, 1000, 10, 32767, 2000, 1500, 100, 500, 500) < 0)
     {
       socket_arm = -1;
@@ -160,80 +169,105 @@ int main(int argc, char**argv)
       return 1;
     }
 
-    /* Manage arm message */
-    if(socket_arm > 0)
+    if(select_result > 0)
     {
-      if(FD_ISSET(socket_arm, &rd))
+      /* Manage arm message */
+      if(socket_arm > 0)
       {
-        // the message would be an information such position or warning
-        bytes_read = recvfrom(socket_arm, &arm_buffer_temp, sizeof(struct arm_frame), 0, NULL, NULL);
-
-        if(bytes_read <= 0)
-          perror("arm_read");
-        else
+        if(FD_ISSET(socket_arm, &rd))
         {
-          if(query_link > -1)
-          {
-            if(arm_link[query_link - 1].request_actual_position == 1)
-            {
-              arm_link[query_link - 1].request_actual_position = 0;
-              arm_link[query_link - 1].actual_position = atol(arm_buffer_temp.param.arm_command);
+          // the message would be an information such position or warning
+          bytes_read = recvfrom(socket_arm, &arm_buffer_temp, sizeof(struct arm_frame), 0, NULL, NULL);
  
-              if(init != 0)
-              {
-                printf("\033[%iA",MOTOR_NUMBER + 1);
-              }
-              else
-                init = 1;
-    
-              printf("Actual Positions:\n");
-              for(i = 0; i < MOTOR_NUMBER; i++)
-              {
-                printf("Link%i: %ld step %f deg        \n", i + 1, arm_link[i].actual_position, (double)arm_link[i].actual_position / (11 * arm_link[i].gear));
-              }
-   
-              query_link = -1;
-            }
-            else if(arm_link[query_link - 1].request_trajectory_status == 1)
+          if(bytes_read > 0)
+          {
+            // Every message from arm must ends with \r
+            arm_token_result = strchr(arm_buffer_temp.arm_command, 13);
+      
+            if((query_link > -1) && (arm_token_result != NULL))
             {
-              arm_link[query_link - 1].request_trajectory_status = 0;
-  
-              arm_link[query_link - 1].trajectory_status = atoi(arm_buffer_temp.param.arm_command);
-              query_link = -1;
+              //printf("Received message from %i\n", query_link);
+              *arm_token_result = '\0';  // translate token in null character
+              arm_request_index = query_link;
+
+              if(arm_link[arm_request_index - 1].request_actual_position == 1)
+              {
+                query_link = -1;
+                arm_link[arm_request_index - 1].request_timeout = 0;
+                arm_link[arm_request_index - 1].request_actual_position = 0;
+                arm_link[arm_request_index - 1].actual_position = atol(arm_buffer_temp.arm_command_param.command);
+
+                if(arm_link[arm_request_index - 1].position_initialized == 0)
+                  arm_link[arm_request_index - 1].position_initialized = 1;
+
+                if(init != 0)
+                {
+                  printf("\033[%iA",MOTOR_NUMBER + 1);
+                }
+                else
+                  init = 1;
+    
+                arm_ee_xyz(&arm_tetha0, &arm_y, &arm_z);
+                arm_tetha0 = arm_link[0].actual_position * M_PI / (180 * 11 * arm_link[0].gear);
+                printf("Actual Positions - x: %f deg y: %f m z: %f m                \n", arm_tetha0, arm_y, arm_z);
+                for(i = 0; i < MOTOR_NUMBER; i++)
+                {
+                  printf("Link%i: %ld step %f deg        \n", i + 1, arm_link[i].actual_position, (double)arm_link[i].actual_position / (11 * arm_link[i].gear));
+                }
+
+              }  
+              else if(arm_link[arm_request_index - 1].request_trajectory_status == 1)
+              {
+                query_link = -1;
+                arm_link[arm_request_index - 1].request_timeout = 0;
+                arm_link[arm_request_index - 1].request_trajectory_status = 0;
+                arm_link[arm_request_index - 1].trajectory_status = atoi(arm_buffer_temp.arm_command_param.command);
+ 
+
+                if(arm_request_index == MOTOR_NUMBER)
+                {
+                  if(arm_link[arm_request_index - 1].trajectory_status > 0)
+                  {
+                    if(arm_link[arm_request_index -1].position_target > 0)
+                      actuator_set_command(30000);
+                    else
+                      actuator_set_command(-30000);
+                  }
+                  else
+                    link_homing_complete |= (int)pow(2, arm_request_index - 1);
+                }
+              }
             }
           }
+          else
+            perror("arm_read");     
         }
 
-        continue;
-      }
-
-      if(FD_ISSET(socket_arm, &wr))
-      {
-        arm_send(socket_arm, &arm_address);
-        continue;
-      }
-    }
- 
-    if(joy_local > 0)
-    {
-      if(FD_ISSET(joy_local, &rd))
-      {
-        bytes_read = get_joystick_status(&joy_local, &jse);
-
-        if(bytes_read <= 0)
-          perror("get_joystick_status");
-        else
+        if(FD_ISSET(socket_arm, &wr))
         {
-          // update at the end of the while
-          continue;
+          arm_send(socket_arm, &arm_address);
         }
-      }//end if(joy_selected == null)
+      }
+ 
+      if(joy_local > 0)
+      {
+        if(FD_ISSET(joy_local, &rd))
+        { 
+          bytes_read = get_joystick_status(&joy_local, &jse);
+
+          if(bytes_read <= 0)
+            perror("get_joystick_status");
+        }//end if(joy_selected == null)
+      }
     }
     
-    arm_status_update(argv[3], socket_status, &socket_status_addr_dest, &jse, JOY_MAX_VALUE);
+    if(select_result == 0)
+    {
+      arm_status_update(argv[3], socket_status, &socket_status_addr_dest, &jse, JOY_MAX_VALUE);
 
-    select_timeout.tv_sec = TIMEOUT_SEC;
-    select_timeout.tv_usec = TIMEOUT_ARM_USEC;
+      select_timeout.tv_sec = TIMEOUT_SEC;
+      select_timeout.tv_usec = TIMEOUT_ARM_USEC;
+    }
 
   }  // end while(!= done)
 
@@ -333,6 +367,7 @@ void arm_status_update(char *file, int socket_status, struct sockaddr_in *addres
       if(arm_stop(0))
       {
 //	    printf("ARM_IDLE\n");
+        arm_set_command_without_value(0, "OFF");
         arm_state = ARM_IDLE;
       }
       break;

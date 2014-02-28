@@ -38,7 +38,7 @@ extern "C" {
  *  Meters. Distance at which the obstacle avoidance becomes active.
  * 
  */     
-#define OA_ACTIVE_DISTANCE              7.0 //in meters
+#define OA_ACTIVE_DISTANCE              7000 //in mm
     
 /** \brief Grid radial sampling
  *
@@ -54,7 +54,7 @@ extern "C" {
  *  Radians. Incremental radial distance between consecutive laser samples.
  * 
  */     
-#define OA_SENSOR_RESOLUTION            0.004363323 //in radians   
+#define OA_SENSOR_RESOLUTION            0.008722222 //in radians   
     
 /** \brief Sensor center
  *
@@ -71,7 +71,7 @@ extern "C" {
  *  Number of readings the laser outputs.
  * 
  */     
-#define OA_SENSOR_COUNT                 1080 // number of laser readings
+//#define OA_SENSOR_COUNT                 140 // number of laser readings
 
 /** \brief Window Threshold
  *
@@ -95,7 +95,7 @@ extern "C" {
  *  Set to reflect how the laser scanner reports its data: CW (human) or CCW (mathematical)
  * 
  */    
-#define OA_SENSOR_ORIENTATION           OA_SENSOR_CLOCKWISE // or OA_SENSOR_ANTI_CLOCKWISE
+#define OA_SENSOR_ORIENTATION          OA_SENSOR_ANTI_CLOCKWISE// Or OA_SENSOR_CLOCKWISE
     
 /** \brief Maximum Speed
  *
@@ -125,7 +125,7 @@ extern "C" {
  * value be approached forward speed will diminish until it get nullified.
  * 
  */     
-#define OA_SAFETY_DISTANCE              1.0 // meters
+#define OA_SAFETY_DISTANCE              1000 // mm
 /** \brief Avoiding Intensity
  *
  * \ingroup ObstacleAvoidance        
@@ -142,9 +142,10 @@ extern "C" {
  *
  * \ingroup ObstacleAvoidance        
  *  Initializes the algorithm. Mandatory execution before calling its functions.
- * 
+ * @param range_deg scan range for the laser in degree
  */     
-void    OA_init (void);
+void OA_init(float range_deg);
+void OA_cleanup(void);
 
 /** \brief Perform avoidance
  *
@@ -160,7 +161,7 @@ void    OA_init (void);
  * @return an RTBvector with the actual commands (heading, speed)
  * @see RTBvector
  */   
-RTBvector OA_perform_avoidance (RTB_FLOAT_TYPE readings[], long count, RTBvector yaw, RTBvector desired_heading);
+RTBvector OA_perform_avoidance(unsigned int readings[], long count, RTBvector current_direction, RTBvector desired_heading);
 
 /**
  * @brief Debug define. Set to 1 to enable.

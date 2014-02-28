@@ -241,11 +241,17 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon, RTB_poin
  * @param localy value either euclidean or lat
  * @param xspeed
  * @param aspeed
+ * @param obstacle_avoid_enable set to 1 to perform obstacle avoidance
+ * @param sensor_reading array of distance value in mm
+ * @param reading_number size of sensor_reading_array
+ * @param point_catch return flag to tell if the point has been catched by rtb recorder
  * @return a pointer to the current status
  * @see RTB_status, RTB_GEO_MODE
  */
-int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed, unsigned char *point_catch);
-
+int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspeed, RTB_FLOAT_TYPE aspeed, 
+               unsigned char obstacle_avoid_enable, unsigned int *sensor_reading, unsigned int reading_number,
+			   unsigned char *point_catch);
+			   
 //#if (RTB_GEO_MODE == RTB_GEO_MODE_EUCLIDEAN)
 /** \brief Clean cache
  *
