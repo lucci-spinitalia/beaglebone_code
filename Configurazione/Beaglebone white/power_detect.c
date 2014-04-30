@@ -52,11 +52,11 @@ int main()
   {
     status = select(1, NULL, NULL, NULL, &select_timeout);
 
-	sprintf(buf, "/sys/class/gpio/gpio%i/value", SYS_5V);
-	fd = open(buf, O_RDWR | O_NOCTTY);
+    sprintf(buf, "/sys/class/gpio/gpio%i/value", SYS_5V);
+    fd = open(buf, O_RDWR | O_NOCTTY);
 	
-	res = read(fd, buf, 255);
-	buf[res] = 0;
+    res = read(fd, buf, 255);
+    buf[res] = 0;
 
     if(res < 0)
       perror("read");
@@ -69,9 +69,9 @@ int main()
       STOP = 1;
     }
   
-	close(fd);
+    close(fd);
 	
-	select_timeout.tv_sec = 1;
+    select_timeout.tv_sec = 1;
     select_timeout.tv_usec = 0;
   }
 

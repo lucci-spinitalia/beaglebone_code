@@ -164,12 +164,6 @@ void OA_cleanup(void);
 RTBvector OA_perform_avoidance(unsigned int readings[], long count, RTBvector current_direction, RTBvector desired_heading);
 
 /**
- * @brief Debug define. Set to 1 to enable.
- * \ingroup ObstacleAvoidance    
- */
-#define DEBUG   0
-
-/**
  * @brief Simulator define. Set to 1 to enable.
  * \ingroup ObstacleAvoidance    
  * This requires Player 3 and Stage 4 to be installed on the system.

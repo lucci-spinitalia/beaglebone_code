@@ -111,7 +111,7 @@ int segway_send(int segway_device, struct sockaddr_in *dest_address)
 
     if(bytes_sent > 0)
     {
-	  segway_net_down = 0;
+	    segway_net_down = 0;
 	  
       segway_buffer_tx_full = 0;
       segway_buffer_tx_data_count--;

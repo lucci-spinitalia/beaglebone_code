@@ -107,7 +107,7 @@ void RTB_internal_clean_cache(void)
   RTB_internal_point_last = NULL;
   RTB_internal_point_start = NULL;
   
-  OA_cleanup();
+  //OA_cleanup();
 }
 
 void RTB_init(void)
@@ -233,16 +233,16 @@ void RTB_traslate_point(RTB_FLOAT_TYPE new_lat, RTB_FLOAT_TYPE new_lon, RTB_poin
   while(local_current_point->previous != NULL)
   {
     //printf("Previouse point x: %f y: %f\n", local_start_point->x, local_start_point->y);
-    local_current_point->x = new_lon - local_start_point->x;
-    local_current_point->y = new_lat - local_start_point->y;
+    local_current_point->x = new_lon - (new_lon - local_start_point->x);
+    local_current_point->y = new_lat - (new_lat - local_start_point->y);
     //printf("Current point x: %f y: %f\n", local_current_point->x, local_current_point->y);
     
     local_current_point = local_current_point->previous;
     local_start_point = local_start_point->next;
   }
   
-  local_current_point->x = new_lon - local_start_point->x;
-  local_current_point->y = new_lat - local_start_point->y;
+  local_current_point->x = new_lon - (new_lon - local_start_point->x);
+  local_current_point->y = new_lat - (new_lat - local_start_point->y);
   
   /*local_start_point = RTB_internal_point_start;
   while(local_start_point->next != NULL)
@@ -303,7 +303,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
       if(RTB_internal_point_start == NULL)
       {
 #if (DEBUG == 1)
-        printf("Actual x and y: %f  -  %f\n", localx, localy);
+        printf("Start lon and lat: %f  -  %f\n", localx, localy);
         //gps_log(localy, localx);
 #endif
         RTB_internal_point_start = malloc(sizeof(RTB_point));
@@ -405,7 +405,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
       RTBstatus.distance_from_start = RTB_internal_getdistance(localx, localy, RTB_internal_point_start->x, RTB_internal_point_start->y);
 #if (DEBUG == 1)
       printf("Current x: %f Current y: %f \nLast x: %f Last y: %f\n", localx, localy, RTB_internal_point_last->x, RTB_internal_point_last->y);
-      printf("Get distance: %f, Distance Threshold: %f\n", RTBstatus.distance, RTB_internal_distance_threshold);
+      printf("Number: %ld Get distance: %f, Distance Threshold: %f\n", RTB_internal_counter, RTBstatus.distance, RTB_internal_distance_threshold);
 #endif
       
       if((RTBstatus.distance >= RTB_internal_distance_threshold) && (xspeed >= 0))
@@ -495,11 +495,11 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
       }
            
       desired_direction.distance = RTB_internal_getdistance(localx, localy, RTB_internal_point_actual->previous->x, RTB_internal_point_actual->previous->y);
-	  desired_direction.distance_from_start = RTB_internal_getdistance(localx, localy, RTB_internal_point_start->x, RTB_internal_point_start->y);
+	    desired_direction.distance_from_start = RTB_internal_getdistance(localx, localy, RTB_internal_point_start->x, RTB_internal_point_start->y);
 	  
 #if (DEBUG == 1)
-      printf("Current x: %f Current y: %f Previouse x: %f Previouse y: %f\n", localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y);
-      printf("Get distance: %f, Distance Threshold: %f\n", RTBstatus.distance, RTB_internal_distance_threshold);
+      printf("Current lon: %f Current lat: %f Previouse lon: %f Previouse lat: %f\n", localx, localy, RTB_internal_point_actual->previous->x,RTB_internal_point_actual->previous->y);
+      printf("Number: %ld Get distance: %f, Distance Threshold: %f\n", RTB_internal_counter, desired_direction.distance, RTB_internal_distance_threshold);
 #endif
       if(desired_direction.distance <= RTB_GUIDE_CHANGE_DIST_TRSH && RTB_internal_point_actual->previous != NULL)
       {
@@ -508,7 +508,7 @@ int RTB_update(RTB_FLOAT_TYPE localx, RTB_FLOAT_TYPE localy, RTB_FLOAT_TYPE xspe
 #endif
         RTB_internal_point_actual = RTB_internal_point_actual->previous;
         //free(RTB_internal_point_actual->next);
-                              
+        RTB_internal_counter--;
 #if (SIMUL == 1)
         rtb_video_take_point(RTB_internal_point_actual);
 #endif

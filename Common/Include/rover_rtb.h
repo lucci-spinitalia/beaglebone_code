@@ -128,7 +128,7 @@ extern "C" {
  * waypoint is found that passes this threshold, the chain of waypoints saved between the actual
  * position and the found one will be deleted. (circular path detection attempt)
  */
-#define RTB_FLUSH_DIST_TRSH         1.0
+#define RTB_FLUSH_DIST_TRSH         10
 
 
 /** \brief RTB Track-mode waypoint change threshold
@@ -137,7 +137,7 @@ extern "C" {
  *  This value determines the distance from the current waypoint at which the
  * auto-guidance switches to the next waypoint.
  */
-#define RTB_GUIDE_CHANGE_DIST_TRSH  0.5
+#define RTB_GUIDE_CHANGE_DIST_TRSH  5
 
         
 /** \brief RTB Track-mode global update frequency
@@ -194,6 +194,7 @@ typedef struct RTB_point{
     RTB_FLOAT_TYPE x;                   /**< RTB_FLOAT_TYPE contains the X value of the point. */ 
     RTB_FLOAT_TYPE y;                   /**< RTB_FLOAT_TYPE contains the Y value of the point. */ 
     RTB_FLOAT_TYPE distance_from_start; /**< RTB_FLOAT_TYPE contains the distance of the point from the origin. */ 
+    int point_number;
     struct RTB_point* next;             /**< RTB_point* contains a pointer to the next waypoint (farther from the origin). */ 
     struct RTB_point* previous;         /**< RTB_point* contains a pointer to the previous waypoint (nearer to the origin). */ 
     

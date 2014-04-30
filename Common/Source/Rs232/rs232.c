@@ -125,7 +125,7 @@ int com_open(char *device_name, __u32 rate, char parity,
     if(stop_bits == 2)
       local_stopbits = CSTOPB;
     else
-      local_stopbits = 0;
+      local_stopbits = ~CSTOPB;
 
     switch(upper_parity)
     {
@@ -144,9 +144,9 @@ int com_open(char *device_name, __u32 rate, char parity,
     // clear current char size mask, no parity checking,
     // no output processing, force 8 bit input
     //
-    newtio.c_cflag &= ~(CSIZE | PARENB) | local_rate | local_databits | local_stopbits | local_parity | CLOCAL | CREAD;;
-    newtio.c_cflag |= CS8;
-    
+
+    newtio.c_cflag = local_rate | local_databits | local_stopbits | local_parity | CREAD | CLOCAL; 
+    newtio.c_cflag &= ~(PARODD | PARENB | CRTSCTS);
     //
     // Input flags - Turn off input processing
     // convert break to null byte, no CR to NL translation,
@@ -154,8 +154,8 @@ int com_open(char *device_name, __u32 rate, char parity,
     // no input parity check, don't strip high bit off,
     // no XON/XOFF software flow control
     //
-    newtio.c_iflag &= ~(IGNPAR | IGNBRK | ICRNL | INLCR |
-                        ISTRIP | IXON | IXOFF | IXANY| IGNCR) | BRKINT | PARMRK | INPCK;
+    //newtio.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | INPCK | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF);
+    newtio.c_iflag = ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON | IXOFF | IUCLC | IXANY | IMAXBEL | IUTF8);
     
     //
     // Output flags - Turn off output processing
@@ -166,25 +166,27 @@ int com_open(char *device_name, __u32 rate, char parity,
     // 
     // config.c_oflag &= ~(OCRNL | ONLCR | ONLRET |
     //                     ONOCR | ONOEOT| OFILL | OLCUC | OPOST);
-    newtio.c_oflag &= ~OPOST;
-
+    //newtio.c_oflag &= ~OPOST;
+    newtio.c_oflag = 0;
+    
     //
     // No line processing:
     // echo off, echo newline off, canonical mode off, 
     // extended input processing off, signal chars off
     //
-    newtio.c_lflag &= ~(ECHO | ECHONL | ECHOE | ICANON | IEXTEN | ISIG);
+    newtio.c_lflag = ~(ECHO | ECHOE | ECHOK | ECHONL | ECHOPRT | ECHOCTL | ECHOKE | ICANON | ISIG | IEXTEN | NOFLSH | XCASE | TOSTOP);
+    
     
     //newtio.c_lflag = 0;
-    newtio.c_cc[VTIME] = 0; //inter-character timer unused
-    newtio.c_cc[VMIN] = 1; //blocking read until 5 chars received
+    newtio.c_cc[VTIME] = 5; //inter-character timer unused
+    newtio.c_cc[VMIN] = 1; //blocking read
 
-    tcflush(fd, TCIFLUSH);
+    //tcflush(fd, TCIFLUSH);
     
     if(cfsetispeed(&newtio, local_rate) < 0 || cfsetospeed(&newtio, local_rate) < 0) 
       return -1;
 
-    if(tcsetattr(fd, TCSANOW, &newtio) < 0)
+    if(tcsetattr(fd, TCSAFLUSH, &newtio) < 0)
       return -1;
 
     return fd;

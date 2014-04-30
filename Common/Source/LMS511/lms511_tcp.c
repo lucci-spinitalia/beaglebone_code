@@ -72,7 +72,7 @@ int lms511_open(int *socket, struct sockaddr_in *address, char *ip_address, int 
   lms511_info.data.spot = NULL;
   
   if(init_tcp_client(socket, ip_address, dest_port) == -1)
-	return -1;
+	  return -1;
   else
     return 1;
 }
@@ -423,7 +423,7 @@ int lms511_parse(int socket_lms511)
                     //printf("Resize data\n");
                     lms511_info.data.spot_number = lms511_info.spot_number;
                     free(lms511_info.data.spot);
-                    lms511_info.data.spot = malloc(lms511_info.data.spot_number);
+                    lms511_info.data.spot = malloc(sizeof(*lms511_info.data.spot) * lms511_info.data.spot_number);
                   }
 						
                   //printf("Get data\n");
