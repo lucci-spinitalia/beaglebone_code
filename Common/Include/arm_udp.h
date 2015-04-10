@@ -2,6 +2,7 @@
 #define ARM_H_
 
 #include "socket_udp.h"
+#include <linux/types.h>
 
 #define ARM_CMD_FIRST_TRIPLET  0x0001
 #define ARM_CMD_SECOND_TRIPLET 0x0002
