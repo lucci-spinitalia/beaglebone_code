@@ -169,6 +169,8 @@ int arm_rs485_open(char *device_name, __u32 rate, char parity, int data_bits, in
     //
     newtio.c_iflag &= ~(IGNPAR | IGNBRK | ICRNL | INLCR |
                         ISTRIP | IXON | IXOFF | IXANY| IGNCR) | BRKINT | PARMRK | INPCK;
+                        
+    newtio.c_iflag |=  BRKINT | PARMRK | INPCK;
     
     //
     // Output flags - Turn off output processing
