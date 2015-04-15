@@ -27,6 +27,7 @@ void flush_device_output(int *);
 
 int rs232_load_tx(unsigned char *data, unsigned int data_length);
 int rs232_unload_rx(unsigned char *data);
+int rs232_unload_rx_filtered(char *data, char token);
 int rs232_write(int rs232_device);
 int rs232_read(int rs232_device);
 int rs232_buffer_tx_get_space(void);
@@ -155,7 +156,10 @@ int com_open(char *device_name, __u32 rate, char parity,
     // no XON/XOFF software flow control
     //
     //newtio.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | INPCK | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF);
-    newtio.c_iflag = ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON | IXOFF | IUCLC | IXANY | IMAXBEL | IUTF8);
+    newtio.c_iflag = ~(IGNPAR | IGNBRK | ICRNL | INLCR |
+                        ISTRIP | IXON | IXOFF | IXANY | IGNCR);
+    
+    newtio.c_iflag |= BRKINT | PARMRK | INPCK;
     
     //
     // Output flags - Turn off output processing
@@ -259,7 +263,6 @@ int rs232_unload_rx(unsigned char *data)
 {
   int length_to_write = 0;
 
-  printf("rs232_unload_rx start\n");
   if(rs232_buffer_rx_empty)
     return 0;
 
@@ -289,7 +292,6 @@ int rs232_unload_rx(unsigned char *data)
 //  printf("full: %i, rd pointer: %i\n", rs232_buffer_rx_full, rs232_buffer_rx_ptr_rd);
 //  printf("\n");
 
-  printf("rs232_unload_rx stop\n");
   return length_to_write;
 }
 
