@@ -35,7 +35,7 @@ int main(int argc, char**argv)
     n = recvfrom(sockfd, mesg, 1000, 0, (struct sockaddr *)&cliaddr, &len);
     sendto(sockfd, mesg, n, 0, (struct sockaddr *)&cliaddr, sizeof(cliaddr));
     printf("------------------------------------------------------\n");
-	printf("Received message from port %i\n", ntohs(cliaddr.sin_port));
+	printf("Received message from port %i of %i bytes\n", ntohs(cliaddr.sin_port), n);
     mesg[n] = 0;
     printf("Received the following:\n");
     printf("%s", mesg);

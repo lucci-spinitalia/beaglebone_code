@@ -29,9 +29,10 @@ int main(int argc, char**argv)
 
   while(fgets(sendline, 10000, stdin) != NULL)
   {
-    sprintf(sendline, "%s%c", sendline, 13);
-    printf("Message to send: %s", sendline);
-    sendto(sockfd, sendline, strlen(sendline), 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
+    char message = 0;
+    //sprintf(&message, "%x", atoi(sendline));
+    //printf("Message to send: %x", message);
+    sendto(sockfd, &message, 1, 0, (struct sockaddr *)&servaddr, sizeof(servaddr));
 
     n = recvfrom(sockfd, recvline, 10000, 0, NULL, NULL);
     recvline[n] = 0;
