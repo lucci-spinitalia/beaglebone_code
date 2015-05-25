@@ -135,6 +135,7 @@ void arm_set_max_velocity(int index, long velocity);
 int arm_start_xyz(void);
 int arm_stop(int index);
 //int arm_move(struct wwvi_js_event jse, __u16 joy_max_value);
+int arm_move(unsigned char triplet_selected, float value1, float value2, float value3);
 int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, float value3);
 int arm_query_position(int link_to_query);
 int arm_query_trajectory(int link_to_query);

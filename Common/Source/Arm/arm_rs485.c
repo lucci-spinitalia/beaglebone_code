@@ -1028,6 +1028,77 @@ int arm_stop(int index)
   return bytes_sent;
 }*/
 
+int arm_move(unsigned char triplet_selected, float value1, float value2, float value3)
+{
+  int i;
+  
+  /*Velocity convertion
+    VT = Velocity *  ((enc. counts per rev.) / (sample rate)) * 65536 [rev/s]
+    
+    enc count per rev = 4000
+    sample rate = 8000
+    
+    VT = Velocity * 32768 * 2 * PI [rad/s]
+    */  
+  switch(triplet_selected)
+  {
+    case 1:
+      for(i = 0; i < 3; i++)
+        arm_link[i].trajectory_status = 1;
+
+      arm_set_command_without_value(0, "MV");
+    arm_set_command_without_value(0, "SLD");
+
+      arm_set_command(1, "VT", (long)(value1 * arm_link[0].velocity_target_limit));
+      arm_set_command(2, "VT", -((long)(value2 * arm_link[1].velocity_target_limit)));
+      arm_set_command(3, "VT", (long)(value3 * arm_link[2].velocity_target_limit));
+
+
+     arm_set_command_without_value(1, "G");
+      arm_set_command_without_value(2, "G");
+      arm_set_command_without_value(3, "G");
+      arm_set_command(0, "c", 0);
+      break;
+
+    case 2:
+      arm_set_command_without_value(0, "MV");
+      for(i = 3; i < 6; i++)
+        arm_link[i].trajectory_status = 1;
+        
+
+      //printf("Send VT Command\n");
+      arm_set_command(4, "VT", (long)(value1 * arm_link[3].velocity_target_limit));
+      arm_set_command(5, "VT", -((long)(value2 * arm_link[4].velocity_target_limit)));
+      arm_set_command(6, "VT", (long)(value3 * arm_link[5].velocity_target_limit));
+
+      arm_set_command_without_value(4, "G");
+      arm_set_command_without_value(5, "G");
+      arm_set_command_without_value(6, "G");
+      arm_set_command(0, "c", 0);
+      break;
+
+    case 3:
+      if(value1 > 0)
+        actuator_set_command(30000);
+      else if(value1 < 0)
+        actuator_set_command(-30000);
+      else
+        actuator_set_command(0);
+      break;
+  
+    default:
+      for(i = 3; i < MOTOR_NUMBER; i++)
+        arm_link[i].trajectory_status = 1;
+        
+      arm_set_command(0, "VT", 0);
+      arm_set_command_without_value(0, "G");
+      arm_set_command(0, "c", 0);
+      break;
+  } // end switch  
+
+  return 1;
+}
+
 /* This function send appropriate command to motor
       triplet_selected: at which triplet the valueX is referred to
       value1: rapresent joint1's velocity normalized to [-1, 1]
