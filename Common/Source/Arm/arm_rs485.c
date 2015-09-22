@@ -28,20 +28,23 @@ void arm_ee_tetha_xyz(float tetha0_rad, float tetha1_rad, float tetha2_rad, floa
 struct arm_info arm_link[MOTOR_NUMBER];
 
 struct arm_rs485_frame arm_rs485_buffer_tx[ARM_RS485_BUFFER_SIZE];
-unsigned int arm_rs485_buffer_tx_ptr_wr = 0;
-unsigned int arm_rs485_buffer_tx_ptr_rd = 0;
+unsigned int arm_rs485_buffer_tx_ptr_wr = 0; // write position in tx buffer
+unsigned int arm_rs485_buffer_tx_ptr_rd = 0; // read position to place data from
 unsigned char arm_rs485_buffer_tx_empty = 1;
 unsigned char arm_rs485_buffer_tx_full = 0;
 unsigned char arm_rs485_buffer_tx_overrun = 0;
-unsigned int arm_rs485_buffer_tx_data_count = 0;  
+unsigned int arm_rs485_buffer_tx_data_count = 0;  // number of byte to transmit 
 
 char arm_rs485_buffer_rx[ARM_RS485_BUFFER_SIZE];
-unsigned int arm_rs485_buffer_rx_ptr_wr = 0;
+unsigned int arm_rs485_buffer_rx_ptr_wr = 0; // write position in rx buffer
 unsigned int arm_rs485_buffer_rx_ptr_rd = 0;
 unsigned char arm_rs485_buffer_rx_empty = 1;
 unsigned char arm_rs485_buffer_rx_full = 0;
 unsigned char arm_rs485_buffer_rx_overrun = 0;
-unsigned int arm_rs485_buffer_rx_data_count = 0; 
+unsigned int arm_rs485_buffer_rx_data_count = 0;  // number of byte received
+
+int arm_rs485_buffer_rx_bookmark = 0; /**< segna a che punto sono arrivato nella ricerca di un carattere nel buffer di ricezione */
+
 
 const unsigned char arm_encoder_factor = 11;
 
@@ -308,20 +311,46 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
   int length_to_write = 0;
   char rs485_buffer_rx_temp[ARM_RS485_BUFFER_SIZE];
   char *token_ptr;
+  int null_check_index = 0;
 
   if(arm_rs485_buffer_rx_empty)
     return 0;
 
   arm_rs485_buffer_rx_full = 0;
  
+  // if it doesn't roll up then it copy message into temp buffer
+  // else it copy the last part of the buffer and the first one until data
+  // length
   if(arm_rs485_buffer_rx_ptr_rd < arm_rs485_buffer_rx_ptr_wr)
   {
+    // it checks for null character into the string
+    // and replace it with 0x01 character.
+    for(null_check_index = arm_rs485_buffer_rx_ptr_rd; null_check_index < (arm_rs485_buffer_rx_ptr_wr + 1); null_check_index++)
+    {
+      if(uart2_buffer_rx[null_check_index] == '\0')
+        arm_rs485_buffer_rx[null_check_index] = 1;
+    }
+    
     length_to_write = arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_ptr_rd;
     memcpy(rs485_buffer_rx_temp, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
     rs485_buffer_rx_temp[length_to_write] = '\0';
   }
   else
   {
+    // it checks for null character into the string
+    // and replace it with 0x01 character.
+    for(null_check_index = arm_rs485_buffer_rx_ptr_rd; null_check_index < ARM_RS485_BUFFER_SIZE; null_check_index++)
+    {
+      if(uart2_buffer_rx[null_check_index] == '\0')
+        arm_rs485_buffer_rx[null_check_index] = 1;
+    } 
+
+    for(null_check_index = 0; null_check_index < (arm_rs485_buffer_rx_ptr_wr + 1); null_check_index++)
+    {
+      if(uart2_buffer_rx[null_check_index] == '\0')
+        arm_rs485_buffer_rx[null_check_index] = 1;
+    }
+    
     length_to_write = (ARM_RS485_BUFFER_SIZE - arm_rs485_buffer_rx_ptr_rd);
     memcpy(rs485_buffer_rx_temp, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
     //printf("Copy first part...rd: %i bytes: %i\n",arm_rs485_buffer_rx_ptr_rd, length_to_write);
@@ -340,24 +369,20 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
   if(token_ptr == NULL)
     return 0;
   else
-  {
     length_to_write = (token_ptr - rs485_buffer_rx_temp + 1);
     
-    token_ptr = strchr(rs485_buffer_rx_temp, '\377');
+  token_ptr = strchr(rs485_buffer_rx_temp, '\377');
   
-    // if received a framing error then discard the whole message
-    if(token_ptr == NULL)
-      memcpy(data, rs485_buffer_rx_temp, length_to_write);
-    else
-    {
-      rs485_buffer_rx_temp[token_ptr - rs485_buffer_rx_temp] = '\0';
-      strcat(rs485_buffer_rx_temp, &rs485_buffer_rx_temp[token_ptr  - rs485_buffer_rx_temp + 1]);
+  // if received a framing error then discard the whole message
+  if(token_ptr == NULL)
+    memcpy(data, rs485_buffer_rx_temp, length_to_write);
+  else
+  {
+    rs485_buffer_rx_temp[token_ptr - rs485_buffer_rx_temp] = '\0';
+    strcat(rs485_buffer_rx_temp, &rs485_buffer_rx_temp[token_ptr  - rs485_buffer_rx_temp + 1]);
       
-      memcpy(data, rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
-      //printf("Rs232 Frame error: %s\nat %i and long %i\n", rs485_buffer_rx_temp, token_ptr - rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
-    }
-
-    //printf("Rs232 string: %s\n", rs485_buffer_rx_temp);
+    memcpy(data, rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
+    //printf("Rs232 Frame error: %s\nat %i and long %i\n", rs485_buffer_rx_temp, token_ptr - rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
   }
 
 	//printf("arm_rs485_buffer_rx_ptr_rd: %i, arm_rs485_buffer_rx_ptr_wr: %i \n", arm_rs485_buffer_rx_ptr_rd, arm_rs485_buffer_rx_ptr_wr);
@@ -374,6 +399,135 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
     arm_rs485_buffer_rx_ptr_rd -= ARM_RS485_BUFFER_SIZE;
     //printf("Buffer rx ptr rd After: %i of %i\n", arm_rs485_buffer_rx_ptr_rd, ARM_RS485_BUFFER_SIZE);
   }
+  
+  if((token_ptr != NULL) && ((token_ptr - rs485_buffer_rx_temp) <= length_to_write))
+    //return -2;
+   return strlen(rs485_buffer_rx_temp);
+  else
+    return length_to_write;
+}
+
+int arm_rs485_unload_rx_multifiltered(char *data, char token, char token_number)
+{
+  int length_to_write = 0;
+  char rs485_buffer_rx_temp[ARM_RS485_BUFFER_SIZE];
+
+  char *token_ptr[10];
+  char *token_winner = NULL;
+  char *null_character = NULL;
+  int token_count = 0;
+
+  if(arm_rs485_buffer_rx_empty)
+    return 0;
+
+  if(token_number > 10)
+    return -1;
+  
+  arm_rs485_buffer_rx_full = 0;
+ 
+ 
+  // it checks if bookmark arrives to the end and if it rolled up
+ 
+  // if the bookmark pass the buffer limit, then it must
+  // starts from the begginning
+  if(arm_rs485_buffer_rx_bookmark >= UART2_BUFFER_SIZE_RX)
+    arm_rs485_buffer_rx_bookmark = arm_rs485_buffer_rx_bookmark - UART2_BUFFER_SIZE_RX;
+
+  // the bookmark must be less than write pointer
+  if(arm_rs485_buffer_rx_bookmark == arm_rs485_buffer_rx_ptr_wr)
+    return 0;
+  
+  // if it doesn't roll up then it copy message into temp buffer
+  // else it copy the last part of the buffer and the first one until data
+  // length
+  if(arm_rs485_buffer_rx_bookmark <= arm_rs485_buffer_rx_ptr_wr)
+  {   
+    length_to_write = arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_bookmark;
+    memcpy(rs485_buffer_rx_temp, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_bookmark], length_to_write);
+
+  }
+  else
+  {   
+    length_to_write = (ARM_RS485_BUFFER_SIZE - arm_rs485_buffer_rx_bookmark);
+    
+    memcpy(rs485_buffer_rx_temp, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_bookmark], length_to_write);
+    memcpy(&rs485_buffer_rx_temp[length_to_write], &arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr);
+    
+    length_to_write = length_to_write + arm_rs485_buffer_rx_ptr_wr;
+  }
+  
+  rs485_buffer_rx_temp[length_to_write] = '\0';
+      
+  // it checks for null character into the string
+  // and replace it with 0x01 character.
+  null_character = strchr(rs485_buffer_rx_temp, '\0');
+  while(null_character != NULL)
+  {
+    if(null_character < &rs485_buffer_rx_temp[length_to_write])
+      *null_character = 1;
+    else
+      break;
+
+    null_character = strchr(rs485_buffer_rx_temp, '\0');
+  }
+
+  // it search for token
+  for(token_count = 0; token_count < token_number; token_count++)
+  {
+    token_ptr[token_count] = strchr(rs485_buffer_rx_temp, token[token_count]);
+    
+    if(token_ptr[token_count] > token_winner)
+      token_winner = token_ptr[token_count];
+  }
+
+  if(token_winner == NULL)
+  {
+    arm_rs485_buffer_rx_bookmark++;
+
+    if(arm_rs485_buffer_rx_bookmark == arm_rs485_buffer_rx_ptr_wr)
+      arm_rs485_buffer_rx_empty = 1;
+    
+    return 0;
+  }
+  
+  token_ptr = strchr(rs485_buffer_rx_temp, '\377');
+  
+  // if received a framing error then discard the whole message
+  if(token_ptr == NULL)
+  {
+    if(arm_rs485_buffer_rx_ptr_rd < arm_rs485_buffer_rx_ptr_wr)
+    {
+      length_to_write = arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_ptr_rd - (token_winner - rs485_buffer_rx_temp);
+
+      memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
+    }
+    else
+    {
+      length_to_write = (UART2_BUFFER_SIZE_RX - arm_rs485_buffer_rx_ptr_rd);
+
+      memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
+      memcpy(&data[length_to_write], arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr - (token_winner - rs485_buffer_rx_temp));
+
+      length_to_write = length_to_write + arm_rs485_buffer_rx_ptr_wr - (token_winner - rs485_buffer_rx_temp);
+    }
+  }
+  else
+  {
+    rs485_buffer_rx_temp[token_ptr - rs485_buffer_rx_temp] = '\0';
+    strcat(rs485_buffer_rx_temp, &rs485_buffer_rx_temp[token_ptr  - rs485_buffer_rx_temp + 1]);
+      
+    memcpy(data, rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
+  }
+
+  arm_rs485_buffer_rx_data_count -= length_to_write;
+
+  if(arm_rs485_buffer_rx_data_count == 0)
+    arm_rs485_buffer_rx_empty = 1;
+
+  arm_rs485_buffer_rx_ptr_rd += length_to_write;
+
+  if(arm_rs485_buffer_rx_ptr_rd >= ARM_RS485_BUFFER_SIZE)
+    arm_rs485_buffer_rx_ptr_rd -= ARM_RS485_BUFFER_SIZE;
   
   if((token_ptr != NULL) && ((token_ptr - rs485_buffer_rx_temp) <= length_to_write))
     //return -2;

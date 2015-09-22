@@ -34,20 +34,20 @@ int rs232_buffer_tx_get_space(void);
 int rs232_buffer_rx_get_space(void);
 
 char rs232_buffer_tx[RS232_BUFFER_SIZE];
-unsigned int rs232_buffer_tx_ptr_wr = 0;
-unsigned int rs232_buffer_tx_ptr_rd = 0;
+unsigned int rs232_buffer_tx_ptr_wr = 0; // write position in tx buffer
+unsigned int rs232_buffer_tx_ptr_rd = 0; // read position to place data from
 unsigned char rs232_buffer_tx_empty = 1;
 unsigned char rs232_buffer_tx_full = 0;
 unsigned char rs232_buffer_tx_overrun = 0;
-unsigned int rs232_buffer_tx_data_count = 0;  
+unsigned int rs232_buffer_tx_data_count = 0;  // number of byte to transmit
 
 char rs232_buffer_rx[RS232_BUFFER_SIZE];
-unsigned int rs232_buffer_rx_ptr_wr = 0;
+unsigned int rs232_buffer_rx_ptr_wr = 0; // write position in rx buffer
 unsigned int rs232_buffer_rx_ptr_rd = 0;
 unsigned char rs232_buffer_rx_empty = 1;
 unsigned char rs232_buffer_rx_full = 0;
 unsigned char rs232_buffer_rx_overrun = 0;
-unsigned int rs232_buffer_rx_data_count = 0; 
+unsigned int rs232_buffer_rx_data_count = 0;  // number of byte received
 
 int com_open(char *device_name, __u32 rate, char parity,
              int data_bits, int stop_bits)
