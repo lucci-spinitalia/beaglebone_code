@@ -101,7 +101,7 @@ unsigned char arm_out_of_service_enable_flag = 1;
 unsigned char laser_enable_flag = 1;
 
 float arm_tetha0, arm_y, arm_z;
-
+long motor_step[MOTOR_NUMBER];
 void signal_handler(int signum)
 {
   // Garbage collection
@@ -153,6 +153,7 @@ int main(int argc, char **argv)
   unsigned char request_timer_flag = 0;
   unsigned char arm_request_position = 0;
   unsigned char arm_request_trajectory = 0;
+  unsigned char arm_request_interpolation = 0;
  
   
   /* Robotic Arm Client*/
@@ -504,7 +505,11 @@ int main(int argc, char **argv)
               else
                 show_arm_ayz_init_flag = 1;
                 
-              arm_ee_xyz(&arm_tetha0, &arm_y, &arm_z);
+              int i;
+              for(i = 0; i < MOTOR_NUMBER; i++)
+                motor_step[i] = arm_link[i].actual_position;
+              
+              arm_ee_xyz(motor_step, &arm_tetha0, &arm_y, &arm_z);
               arm_tetha0 = arm_link[0].actual_position * M_PI / (180 * 11 * arm_link[0].gear);
               printf("Actual Positions - x: %f deg y: %f m z: %f m                \n", arm_tetha0, arm_y, arm_z);
               for(query_link_count = 0; query_link_count < MOTOR_NUMBER; query_link_count++)
@@ -532,7 +537,7 @@ int main(int argc, char **argv)
       {
         while((arm_rs485_buffer_tx_empty == 0) && (arm_query_link == -1))
         {         
-          bytes_sent = arm_rs485_write(arm_rs485_device, &arm_query_link, &arm_request_position, &arm_request_trajectory);
+          bytes_sent = arm_rs485_write(arm_rs485_device, &arm_query_link, &arm_request_position, &arm_request_trajectory, &arm_request_interpolation);
  
           if(bytes_sent > 0)
           {
@@ -672,6 +677,8 @@ void arm_status_update(unsigned char *arm_state, unsigned char *arm_next_state, 
   static float y = 0;
   static float z = 0;
   
+  int motor_index;
+  
   switch(*arm_state)
   {
      
@@ -687,7 +694,10 @@ void arm_status_update(unsigned char *arm_state, unsigned char *arm_next_state, 
         case ARM_CMD_FIRST_TRIPLET:
         case ARM_CMD_SECOND_TRIPLET:
         case ARM_CMD_ACTUATOR:
-          arm_ee_xyz(&x, &y, &z);
+          for(motor_index = 0; motor_index < 3; motor_index++)
+            motor_step[motor_index] = arm_link[motor_index].actual_position;
+          
+          arm_ee_xyz(motor_step, &x, &y, &z);
           arm_start_xyz();
           arm_query_position(0);
           *arm_state = SCU_ARM_MOVE;

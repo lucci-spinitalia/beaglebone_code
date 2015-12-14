@@ -26,6 +26,7 @@ void arm_ee_tetha_xyz(float tetha0_rad, float tetha1_rad, float tetha2_rad, floa
 
 /* Global variable */
 struct arm_info arm_link[MOTOR_NUMBER];
+int actuator_last_action = 0;
 
 struct arm_rs485_frame arm_rs485_buffer_tx[ARM_RS485_BUFFER_SIZE];
 unsigned int arm_rs485_buffer_tx_ptr_wr = 0; // write position in tx buffer
@@ -46,10 +47,11 @@ unsigned int arm_rs485_buffer_rx_data_count = 0;  // number of byte received
 int arm_rs485_buffer_rx_bookmark = 0; /**< segna a che punto sono arrivato nella ricerca di un carattere nel buffer di ricezione */
 
 
-const unsigned char arm_encoder_factor = 11;
+const float arm_encoder_factor = 0.09;
 
 char current_motion_file[256];
 int motion_file_cursor_position = 0;
+int motion_file_cursor_position_temp = 0;
 double x, y, z;
 int wrist_position_mode = 0;
 int arm_auto_motion_xyz_mode = 0;
@@ -73,7 +75,7 @@ int arm_rs485_open(char *device_name, __u32 rate, char parity, int data_bits, in
   int local_stopbits = 0;
   int local_parity = 0;
   char upper_parity;
-  struct termios oldtio, newtio;
+  struct termios newtio;
 
   // Init circular buffer
   arm_rs485_buffer_tx_ptr_wr = 0;
@@ -150,18 +152,16 @@ int arm_rs485_open(char *device_name, __u32 rate, char parity, int data_bits, in
     } 
 
 
-    if(tcgetattr(fd, &oldtio) < 0)  //save current port settings
+    if(tcgetattr(fd, &newtio) < 0)  //save current port settings
       return -1;
-
-    bzero(&newtio, sizeof(newtio));
     
     //
     // Turn off character processing
     // clear current char size mask, no parity checking,
     // no output processing, force 8 bit input
     //
-    newtio.c_cflag = local_rate | local_databits | local_stopbits | local_parity | CLOCAL | CREAD;
-    newtio.c_cflag &= ~(PARODD | PARENB | CRTSCTS);
+    newtio.c_cflag |= (local_databits | local_stopbits | local_parity | CLOCAL | CREAD);
+    newtio.c_cflag &= ~(PARODD | CRTSCTS | PARENB);
     
     //
     // Input flags - Turn off input processing
@@ -170,10 +170,10 @@ int arm_rs485_open(char *device_name, __u32 rate, char parity, int data_bits, in
     // no input parity check, don't strip high bit off,
     // no XON/XOFF software flow control
     //
-    newtio.c_iflag &= ~(IGNPAR | IGNBRK | ICRNL | INLCR |
-                        ISTRIP | IXON | IXOFF | IXANY| IGNCR) | BRKINT | PARMRK | INPCK;
+    newtio.c_iflag &= ~(IGNPAR | IGNBRK | INLCR |
+                        ISTRIP | IXON | IXOFF | IXANY| IGNCR | PARMRK);
                         
-    newtio.c_iflag |=  BRKINT | PARMRK | INPCK;
+    newtio.c_iflag |=  (BRKINT | INPCK | ICRNL);
     
     //
     // Output flags - Turn off output processing
@@ -191,11 +191,12 @@ int arm_rs485_open(char *device_name, __u32 rate, char parity, int data_bits, in
     // echo off, echo newline off, canonical mode off, 
     // extended input processing off, signal chars off
     //
-    newtio.c_lflag &= ~(ECHO | ECHONL | ECHOE | ICANON | IEXTEN | ISIG);
+    //newtio.c_lflag |= ICANON;
+    newtio.c_lflag &= ~(ECHO | ECHONL | ECHOE | ECHOK | IEXTEN | ISIG | ICANON);
     
     //newtio.c_lflag = 0;
     newtio.c_cc[VTIME] = 0; //inter-character timer unused
-    newtio.c_cc[VMIN] = 1; //blocking read until 5 chars received
+    newtio.c_cc[VMIN] = 1; //blocking read
 
     tcflush(fd, TCIFLUSH);
     
@@ -272,18 +273,25 @@ int arm_rs485_unload_rx(unsigned char *data)
 {
   int length_to_write = 0;
 
-  printf("rs232_unload_rx start\n");
   if(arm_rs485_buffer_rx_empty)
     return 0;
 
   arm_rs485_buffer_rx_full = 0;
  
   if(arm_rs485_buffer_rx_ptr_rd < arm_rs485_buffer_rx_ptr_wr)
-    length_to_write = (arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_ptr_rd);
+  {
+    length_to_write = arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_ptr_rd;
+    memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
+    data[length_to_write] = '\0';
+  }
   else
+  {
     length_to_write = (ARM_RS485_BUFFER_SIZE - arm_rs485_buffer_rx_ptr_rd);
-
-  memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
+    memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
+    memcpy(&data[length_to_write], &arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr + 1);
+    length_to_write = length_to_write + arm_rs485_buffer_rx_ptr_wr;
+    data[length_to_write] = '\0';    
+  }
 	
   arm_rs485_buffer_rx_data_count -= length_to_write;
 
@@ -295,14 +303,71 @@ int arm_rs485_unload_rx(unsigned char *data)
   if(arm_rs485_buffer_rx_ptr_rd >= ARM_RS485_BUFFER_SIZE)
     arm_rs485_buffer_rx_ptr_rd -= ARM_RS485_BUFFER_SIZE;
 
-  //if(arm_rs485_buffer_rx_ptr_rd == ARM_RS485_BUFFER_SIZE)
-  // arm_rs485_buffer_rx_ptr_rd = 0;
+  return length_to_write;
+}
 
-//  printf("\nempty: %i, data_count: %i\n", arm_rs485_buffer_rx_empty,arm_rs485_buffer_rx_data_count);
-//  printf("full: %i, rd pointer: %i\n", arm_rs485_buffer_rx_full, arm_rs485_buffer_rx_ptr_rd);
-//  printf("\n");
+int arm_rs485_unload_interpolation(unsigned char *data)
+{
+  int length_to_write = 0;
+  int message_length = 0;
 
-  printf("rs232_unload_rx stop\n");
+  if(arm_rs485_buffer_rx_empty)
+    return 0;
+
+  if((arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd] != 0xF9) && (arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd] != 0xFE))
+    return 0;
+   
+  if(arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd] == 0XF9)
+    message_length = 6;
+  else if(arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd] == 0XFE)
+    message_length = 5;
+  
+  if(arm_rs485_buffer_rx_data_count < message_length)
+    return 0;
+  
+  arm_rs485_buffer_rx_full = 0;
+    
+  if(arm_rs485_buffer_rx_ptr_rd < arm_rs485_buffer_rx_ptr_wr)
+  {
+    length_to_write = arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_ptr_rd;
+    
+    if(length_to_write > message_length)
+      length_to_write = message_length;
+    
+    memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
+  }
+  else
+  {
+    length_to_write = (ARM_RS485_BUFFER_SIZE - arm_rs485_buffer_rx_ptr_rd);
+        
+    if(length_to_write > message_length)
+      length_to_write = message_length;
+    
+    memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
+    
+    if((length_to_write + arm_rs485_buffer_rx_ptr_wr + 1) > message_length)
+    {
+      memcpy(&data[length_to_write], &arm_rs485_buffer_rx, message_length - length_to_write);
+      length_to_write = message_length;
+    }
+    else
+    {
+      memcpy(&data[length_to_write], &arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr + 1);
+    
+      length_to_write = length_to_write + arm_rs485_buffer_rx_ptr_wr + 1;
+    }
+  }
+	
+  arm_rs485_buffer_rx_data_count -= length_to_write;
+
+  if(arm_rs485_buffer_rx_data_count == 0)
+    arm_rs485_buffer_rx_empty = 1;
+
+  arm_rs485_buffer_rx_ptr_rd += length_to_write;
+
+  if(arm_rs485_buffer_rx_ptr_rd >= ARM_RS485_BUFFER_SIZE)
+    arm_rs485_buffer_rx_ptr_rd -= ARM_RS485_BUFFER_SIZE;
+
   return length_to_write;
 }
 
@@ -311,13 +376,14 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
   int length_to_write = 0;
   char rs485_buffer_rx_temp[ARM_RS485_BUFFER_SIZE];
   char *token_ptr;
-  int null_check_index = 0;
+  //int null_check_index = 0;
+
+    //printf("unload empty: %d\n", arm_rs485_buffer_rx_empty);
 
   if(arm_rs485_buffer_rx_empty)
     return 0;
-
-  arm_rs485_buffer_rx_full = 0;
  
+    
   // if it doesn't roll up then it copy message into temp buffer
   // else it copy the last part of the buffer and the first one until data
   // length
@@ -325,11 +391,11 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
   {
     // it checks for null character into the string
     // and replace it with 0x01 character.
-    for(null_check_index = arm_rs485_buffer_rx_ptr_rd; null_check_index < (arm_rs485_buffer_rx_ptr_wr + 1); null_check_index++)
+    /*for(null_check_index = arm_rs485_buffer_rx_ptr_rd; null_check_index < (arm_rs485_buffer_rx_ptr_wr + 1); null_check_index++)
     {
-      if(uart2_buffer_rx[null_check_index] == '\0')
+      if(arm_rs485_buffer_rx[null_check_index] == '\0')
         arm_rs485_buffer_rx[null_check_index] = 1;
-    }
+    }*/
     
     length_to_write = arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_ptr_rd;
     memcpy(rs485_buffer_rx_temp, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
@@ -339,29 +405,30 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
   {
     // it checks for null character into the string
     // and replace it with 0x01 character.
-    for(null_check_index = arm_rs485_buffer_rx_ptr_rd; null_check_index < ARM_RS485_BUFFER_SIZE; null_check_index++)
+    /*for(null_check_index = arm_rs485_buffer_rx_ptr_rd; null_check_index < ARM_RS485_BUFFER_SIZE; null_check_index++)
     {
-      if(uart2_buffer_rx[null_check_index] == '\0')
+      if(arm_rs485_buffer_rx[null_check_index] == '\0')
         arm_rs485_buffer_rx[null_check_index] = 1;
-    } 
+    }
 
     for(null_check_index = 0; null_check_index < (arm_rs485_buffer_rx_ptr_wr + 1); null_check_index++)
     {
-      if(uart2_buffer_rx[null_check_index] == '\0')
+      if(arm_rs485_buffer_rx[null_check_index] == '\0')
         arm_rs485_buffer_rx[null_check_index] = 1;
-    }
+    }*/
     
     length_to_write = (ARM_RS485_BUFFER_SIZE - arm_rs485_buffer_rx_ptr_rd);
     memcpy(rs485_buffer_rx_temp, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
     //printf("Copy first part...rd: %i bytes: %i\n",arm_rs485_buffer_rx_ptr_rd, length_to_write);
-    memcpy(&rs485_buffer_rx_temp[length_to_write], &arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr);
+    memcpy(&rs485_buffer_rx_temp[length_to_write], &arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr + 1);
     //printf("Copy second part...buffer rd: %i bytes: %i\n", length_to_write, arm_rs485_buffer_rx_ptr_wr);
     
     length_to_write = length_to_write + arm_rs485_buffer_rx_ptr_wr;
-    rs485_buffer_rx_temp[length_to_write] = '\0';
+    rs485_buffer_rx_temp[length_to_write] = '\0';    
     
     //printf("Rs232 rd string: %s\n", rs485_buffer_rx_temp);
   }
+  
   
   token_ptr = strchr(rs485_buffer_rx_temp, token);
   
@@ -370,8 +437,10 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
     return 0;
   else
     length_to_write = (token_ptr - rs485_buffer_rx_temp + 1);
-    
-  token_ptr = strchr(rs485_buffer_rx_temp, '\377');
+   
+  arm_rs485_buffer_rx_full = 0;
+  
+  token_ptr = strchr(rs485_buffer_rx_temp, 0xff);
   
   // if received a framing error then discard the whole message
   if(token_ptr == NULL)
@@ -382,7 +451,7 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
     strcat(rs485_buffer_rx_temp, &rs485_buffer_rx_temp[token_ptr  - rs485_buffer_rx_temp + 1]);
       
     memcpy(data, rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
-    //printf("Rs232 Frame error: %s\nat %i and long %i\n", rs485_buffer_rx_temp, token_ptr - rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
+    printf("Rs232 Frame error: %s\nat %i and long %i\n", rs485_buffer_rx_temp, token_ptr - rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
   }
 
 	//printf("arm_rs485_buffer_rx_ptr_rd: %i, arm_rs485_buffer_rx_ptr_wr: %i \n", arm_rs485_buffer_rx_ptr_rd, arm_rs485_buffer_rx_ptr_wr);
@@ -407,7 +476,7 @@ int arm_rs485_unload_rx_filtered(char *data, char token)
     return length_to_write;
 }
 
-int arm_rs485_unload_rx_multifiltered(char *data, char token, char token_number)
+int arm_rs485_unload_rx_multifiltered(char *data, char *token, char token_number)
 {
   int length_to_write = 0;
   char rs485_buffer_rx_temp[ARM_RS485_BUFFER_SIZE];
@@ -423,15 +492,13 @@ int arm_rs485_unload_rx_multifiltered(char *data, char token, char token_number)
   if(token_number > 10)
     return -1;
   
-  arm_rs485_buffer_rx_full = 0;
  
- 
-  // it checks if bookmark arrives to the end and if it rolled up
+   // it checks if bookmark arrives to the end and if it rolled up
  
   // if the bookmark pass the buffer limit, then it must
   // starts from the begginning
-  if(arm_rs485_buffer_rx_bookmark >= UART2_BUFFER_SIZE_RX)
-    arm_rs485_buffer_rx_bookmark = arm_rs485_buffer_rx_bookmark - UART2_BUFFER_SIZE_RX;
+  if(arm_rs485_buffer_rx_bookmark >= ARM_RS485_BUFFER_SIZE)
+    arm_rs485_buffer_rx_bookmark = arm_rs485_buffer_rx_bookmark - ARM_RS485_BUFFER_SIZE;
 
   // the bookmark must be less than write pointer
   if(arm_rs485_buffer_rx_bookmark == arm_rs485_buffer_rx_ptr_wr)
@@ -444,20 +511,19 @@ int arm_rs485_unload_rx_multifiltered(char *data, char token, char token_number)
   {   
     length_to_write = arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_bookmark;
     memcpy(rs485_buffer_rx_temp, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_bookmark], length_to_write);
-
   }
   else
   {   
     length_to_write = (ARM_RS485_BUFFER_SIZE - arm_rs485_buffer_rx_bookmark);
     
     memcpy(rs485_buffer_rx_temp, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_bookmark], length_to_write);
-    memcpy(&rs485_buffer_rx_temp[length_to_write], &arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr);
+    memcpy(&rs485_buffer_rx_temp[length_to_write], arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr + 1);
     
     length_to_write = length_to_write + arm_rs485_buffer_rx_ptr_wr;
   }
   
   rs485_buffer_rx_temp[length_to_write] = '\0';
-      
+
   // it checks for null character into the string
   // and replace it with 0x01 character.
   null_character = strchr(rs485_buffer_rx_temp, '\0');
@@ -469,8 +535,8 @@ int arm_rs485_unload_rx_multifiltered(char *data, char token, char token_number)
       break;
 
     null_character = strchr(rs485_buffer_rx_temp, '\0');
-  }
-
+  }  
+  
   // it search for token
   for(token_count = 0; token_count < token_number; token_count++)
   {
@@ -482,39 +548,40 @@ int arm_rs485_unload_rx_multifiltered(char *data, char token, char token_number)
 
   if(token_winner == NULL)
   {
-    arm_rs485_buffer_rx_bookmark++;
-
-    if(arm_rs485_buffer_rx_bookmark == arm_rs485_buffer_rx_ptr_wr)
-      arm_rs485_buffer_rx_empty = 1;
+    arm_rs485_buffer_rx_bookmark = arm_rs485_buffer_rx_ptr_wr;
+    arm_rs485_buffer_rx_empty = 1;
     
     return 0;
   }
   
-  token_ptr = strchr(rs485_buffer_rx_temp, '\377');
+  arm_rs485_buffer_rx_full = 0;
+  
+  token_ptr[0] = strchr(rs485_buffer_rx_temp, '\377');
   
   // if received a framing error then discard the whole message
-  if(token_ptr == NULL)
+  if(token_ptr[0] == NULL)
   {
     if(arm_rs485_buffer_rx_ptr_rd < arm_rs485_buffer_rx_ptr_wr)
     {
-      length_to_write = arm_rs485_buffer_rx_ptr_wr - arm_rs485_buffer_rx_ptr_rd - (token_winner - rs485_buffer_rx_temp);
-
+      length_to_write = arm_rs485_buffer_rx_bookmark - arm_rs485_buffer_rx_ptr_rd + (token_winner - rs485_buffer_rx_temp) + 1;
       memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
     }
     else
     {
-      length_to_write = (UART2_BUFFER_SIZE_RX - arm_rs485_buffer_rx_ptr_rd);
+      length_to_write = (ARM_RS485_BUFFER_SIZE - arm_rs485_buffer_rx_ptr_rd);
 
       memcpy(data, &arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_rd], length_to_write);
-      memcpy(&data[length_to_write], arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr - (token_winner - rs485_buffer_rx_temp));
+      memcpy(&data[length_to_write], arm_rs485_buffer_rx, arm_rs485_buffer_rx_ptr_wr - (token_winner - rs485_buffer_rx_temp) + 1);
 
       length_to_write = length_to_write + arm_rs485_buffer_rx_ptr_wr - (token_winner - rs485_buffer_rx_temp);
     }
+    
+    data[length_to_write] = 0;
   }
   else
   {
-    rs485_buffer_rx_temp[token_ptr - rs485_buffer_rx_temp] = '\0';
-    strcat(rs485_buffer_rx_temp, &rs485_buffer_rx_temp[token_ptr  - rs485_buffer_rx_temp + 1]);
+    rs485_buffer_rx_temp[token_ptr[0] - rs485_buffer_rx_temp] = '\0';
+    strcat(rs485_buffer_rx_temp, &rs485_buffer_rx_temp[token_ptr[0]  - rs485_buffer_rx_temp + 1]);
       
     memcpy(data, rs485_buffer_rx_temp, strlen(rs485_buffer_rx_temp));
   }
@@ -529,7 +596,9 @@ int arm_rs485_unload_rx_multifiltered(char *data, char token, char token_number)
   if(arm_rs485_buffer_rx_ptr_rd >= ARM_RS485_BUFFER_SIZE)
     arm_rs485_buffer_rx_ptr_rd -= ARM_RS485_BUFFER_SIZE;
   
-  if((token_ptr != NULL) && ((token_ptr - rs485_buffer_rx_temp) <= length_to_write))
+  arm_rs485_buffer_rx_bookmark = arm_rs485_buffer_rx_ptr_rd;
+  
+  if((token_ptr[0] != NULL) && ((token_ptr[0] - rs485_buffer_rx_temp) <= length_to_write))
     //return -2;
    return strlen(rs485_buffer_rx_temp);
   else
@@ -544,13 +613,33 @@ int arm_rs485_read(int device)
   if(arm_rs485_buffer_rx_full)
   {
     arm_rs485_buffer_rx_overrun = 1;
-    return -1;
+    return -2;
   }
 
   if(device > 0)
   {
     bytes_read = read(device, rs485_buffer_rx_temp, arm_rs485_buffer_rx_get_space());
   
+    int i;
+    if(bytes_read <= 0)
+    {
+      printf("rx space: %d, ptr write: %d, ptr read: %d, count: %d, full: %d\n", arm_rs485_buffer_rx_get_space(), arm_rs485_buffer_rx_ptr_wr, arm_rs485_buffer_rx_ptr_rd,
+      arm_rs485_buffer_rx_data_count, arm_rs485_buffer_rx_full);
+      
+      if(bytes_read == -1)
+        printf("Bad file\n");
+      
+      return 0;
+    }
+    /*else
+    {
+      printf("data: ");
+      for(i = 0; i < bytes_read; i++)
+        printf("%x ", rs485_buffer_rx_temp[i]);
+
+      printf("\n");
+    }*/
+    
     if((ARM_RS485_BUFFER_SIZE - arm_rs485_buffer_rx_ptr_wr) >= bytes_read)
       memcpy(&arm_rs485_buffer_rx[arm_rs485_buffer_rx_ptr_wr], rs485_buffer_rx_temp, bytes_read);
     else
@@ -587,30 +676,73 @@ int arm_rs485_read(int device)
   return bytes_read;
 }
 
-int arm_rs485_write(int device, int *query_link, unsigned char *request_position, unsigned char *request_trajectory_status)
+int arm_rs485_get_last_message_write(struct arm_rs485_frame *arm_rs485_buffer)
+{
+  if(arm_rs485_buffer_tx_ptr_rd > 0)
+    memcpy(arm_rs485_buffer, &arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd - 1], sizeof(struct arm_rs485_frame));
+  else 
+    memcpy(arm_rs485_buffer, &arm_rs485_buffer_tx[ARM_RS485_BUFFER_SIZE - 1], sizeof(struct arm_rs485_frame));
+  
+  return 0;
+}
+
+int arm_rs485_write(int device, int *query_link, unsigned char *request_position, unsigned char *request_trajectory_status, 
+                    unsigned char *request_interpolation_status, unsigned char *request_error_status)
 {
   int bytes_sent = 0;
+  int bytes_to_send = 0;
 
   if(device > 0)
   {
     if(arm_rs485_buffer_tx_empty)
       return 0;
 
-    bytes_sent = write(device, arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command, strlen(arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command));
-
+    if(isprint(arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command[1]))
+      bytes_to_send = strlen(arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command);
+    else
+    {
+      // nel conto dei caratteri ce n'è uno in più (il primo) che indica l'indirizzo del motore
+      switch(arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command[1])
+      {
+        case 0xFA:
+          bytes_to_send = 6;
+          break;
+        case 0xFB:
+          bytes_to_send = 4;
+          break;
+        case 0xFD:
+          bytes_to_send = 6;
+          break;
+        default:
+          bytes_to_send = strlen(arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command);
+          break;
+      }
+    }
+    
+    /*int i;
+    printf("Transmit [%i]:", bytes_to_send);
+    for(i = 0; i < bytes_to_send; i++)
+      printf("%x ", arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command[i]);
+      
+    printf("\n");*/
+    
+    bytes_sent = write(device, arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command, bytes_to_send);
+    
     if(bytes_sent > 0)
     {
       *request_position = arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.request_position;
       *request_trajectory_status = arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.request_trajectory_status;
+      *request_interpolation_status = arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.request_interpolation_status;
+      *request_error_status = arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.request_error_status;
       
-      if(*request_position || *request_trajectory_status)
+      if(*request_position || *request_trajectory_status || *request_interpolation_status || *request_error_status)
         *query_link = arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.index;
       else
         *query_link = -1;
       
       arm_rs485_buffer_tx_full = 0;
       arm_rs485_buffer_tx_data_count--;
-      arm_rs485_buffer_tx_ptr_rd ++;
+      arm_rs485_buffer_tx_ptr_rd++;
 
       if(arm_rs485_buffer_tx_ptr_rd == ARM_RS485_BUFFER_SIZE)
         arm_rs485_buffer_tx_ptr_rd = 0;
@@ -628,30 +760,74 @@ int arm_rs485_write(int device, int *query_link, unsigned char *request_position
 int arm_set_command_without_value(int index, char *command)
 {
   int bytes_sent;
+  int index_start;
+  int index_end;
+  int i;
   struct arm_rs485_frame buffer;
   
-  buffer.arm_command_param.index = index;
-  
-  if((strncmp(command, "RPA", strlen("RPA")) == 0))
+  if(index == 0)
   {
-    buffer.arm_command_param.request_position = 1;
-    buffer.arm_command_param.request_trajectory_status = 0;
-  }
-  else if(strncmp(command, "RB(0,2)", strlen("RB(0,2)")) == 0)
-  {
-    buffer.arm_command_param.request_position = 0;
-    buffer.arm_command_param.request_trajectory_status = 1;
+    index_start = 1;
+    index_end = SMART_MOTOR_NUMBER;
   }
   else
   {
-    buffer.arm_command_param.request_position = 0;
-    buffer.arm_command_param.request_trajectory_status = 0;
-  }    
+    index_start = index;
+    index_end = index;
+  }
+    
+  for(i = index_start; i <= index_end; i++)
+  {
+    buffer.arm_command_param.index = i;
+    
+    if((strncmp(command, "RPA", strlen("RPA")) == 0))
+    {
+      buffer.arm_command_param.request_position = 1;
+      buffer.arm_command_param.request_trajectory_status = 0;
+      buffer.arm_command_param.request_interpolation_status = 0;
+      buffer.arm_command_param.request_error_status = 0;
+    }
+    else if(strncmp(command, "RB(0,2)", strlen("RB(0,2)")) == 0)
+    {
+      buffer.arm_command_param.request_position = 0;
+      buffer.arm_command_param.request_trajectory_status = 1;
+      buffer.arm_command_param.request_interpolation_status = 0;
+      buffer.arm_command_param.request_error_status = 0;
+    }
+    else if(strcmp(command, "Q") == 0)
+    {
+      buffer.arm_command_param.request_position = 0;
+      buffer.arm_command_param.request_trajectory_status = 0;
+      buffer.arm_command_param.request_interpolation_status = 1;
+      buffer.arm_command_param.request_error_status = 0;
+    }
+    else if((strncmp(command, "Q1", strlen("Q1")) == 0) && (i == SMART_MOTOR_SYNC_INDEX))
+    {
+      buffer.arm_command_param.request_position = 0;
+      buffer.arm_command_param.request_trajectory_status = 0;
+      buffer.arm_command_param.request_interpolation_status = 1;
+      buffer.arm_command_param.request_error_status = 0;
+    }
+    else if(strncmp(command, "RVT", strlen("RVT")) == 0)
+    {
+      buffer.arm_command_param.request_position = 0;
+      buffer.arm_command_param.request_trajectory_status = 0;
+      buffer.arm_command_param.request_interpolation_status = 0;
+      buffer.arm_command_param.request_error_status = 1;
+    }
+    else
+    {
+      buffer.arm_command_param.request_position = 0;
+      buffer.arm_command_param.request_trajectory_status = 0;
+      buffer.arm_command_param.request_interpolation_status = 0;
+      buffer.arm_command_param.request_error_status = 0;
+    }    
 
-  sprintf(buffer.arm_command_param.command, "%c%s%c%c", index + 128, command, 0x0d, 0);
+    sprintf(buffer.arm_command_param.command, "%c%s%c%c", i + 128, command, 0x0d, 0);
+    
+    bytes_sent = arm_rs485_load_tx(buffer);
+  }
   
-  bytes_sent = arm_rs485_load_tx(buffer);
-
   return bytes_sent;
 }
 
@@ -665,6 +841,8 @@ int arm_set_command(int index, char *command, long value)
   
   buffer.arm_command_param.request_position = 0;
   buffer.arm_command_param.request_trajectory_status = 0;
+  buffer.arm_command_param.request_interpolation_status = 0;
+  buffer.arm_command_param.request_error_status = 0;
   
   bytes_sent = arm_rs485_load_tx(buffer);
   
@@ -681,10 +859,20 @@ int actuator_request_position()
   
   buffer.arm_command_param.request_position = 1;
   buffer.arm_command_param.request_trajectory_status = 0;
+  buffer.arm_command_param.request_interpolation_status = 0;
+  buffer.arm_command_param.request_error_status = 0;
   
   bytes_sent = arm_rs485_load_tx(buffer);
 
   return bytes_sent;
+}
+
+void actuator_get_status(struct arm_info *arm_link)
+{
+  if(actuator_last_action == 1) //open
+    arm_link->actual_position = 1;
+  else if(actuator_last_action == 2) //close
+    arm_link->actual_position = 0; 
 }
 
 int actuator_request_trajectory()
@@ -697,6 +885,8 @@ int actuator_request_trajectory()
   
   buffer.arm_command_param.request_position = 0;
   buffer.arm_command_param.request_trajectory_status = 1;
+  buffer.arm_command_param.request_interpolation_status = 0;
+  buffer.arm_command_param.request_error_status = 0;
   
   bytes_sent = arm_rs485_load_tx(buffer);
 
@@ -707,23 +897,22 @@ int actuator_set_command(long command)
 {
   int bytes_sent;
   struct arm_rs485_frame buffer;
-  static int actuator_state = 0;
   static int actuator_prev_state = 0;
   
   if(command > 10000) // opening
-    actuator_state = 1;
+    actuator_last_action = 1;
   else if(command < -10000) // closing
-    actuator_state = 2;
+    actuator_last_action = 2;
   else // stop
-    actuator_state = 0;
+    actuator_last_action = 0;
 
-  if(actuator_state == actuator_prev_state)
+  if(actuator_last_action == actuator_prev_state)
     return 0;
   else
-    actuator_prev_state = actuator_state;
+    actuator_prev_state = actuator_last_action;
 	
   buffer.arm_command_param.index = 7;
-  switch(actuator_state)
+  switch(actuator_last_action)
   {
     case 0: //stop
 	  //printf("ACTUATOR STOP\n");
@@ -749,6 +938,8 @@ int actuator_set_command(long command)
 
   buffer.arm_command_param.request_position = 0;
   buffer.arm_command_param.request_trajectory_status = 0;
+  buffer.arm_command_param.request_interpolation_status = 0;
+  buffer.arm_command_param.request_error_status = 0;
   
   bytes_sent = arm_rs485_load_tx(buffer);
 
@@ -913,55 +1104,102 @@ int arm_init(int index, long kp, long ki, long kl, long kd, long kv, long adt, l
   if(arm_set_command(index, "VT", 0) <= 0) //set velocity target
     return -1;
   
+  if(arm_set_command(index, "MV", 0) <= 0) //set velocity mode
+    return -1;
+    
   if(arm_set_command(index, "AMPS", amps) <= 0) // set pwm drive signal limit
     return -1;
     
   if(arm_set_command_without_value(index, "F") <= 0) // active settings
     return -1;
       
-  if(arm_set_command(1, "SLN", -490000) <= 0) // set pwm drive signal limit
+  if(arm_set_command(1, "SLN", -490000) <= 0) // set soft left limit
     return -1;
       
-  if(arm_set_command(1, "SLP", 280000) <= 0) // set pwm drive signal limit
+  if(arm_set_command(1, "SLP", 280000) <= 0) // set soft right limit
     return -1;
       
-  if(arm_set_command(2, "SLN", -468909) <= 0) // set pwm drive signal limit
+  if(arm_set_command(2, "SLN", -468909) <= 0) // set soft left limit
     return -1;
       
-  if(arm_set_command(2, "SLP", 1381600) <= 0) // set pwm drive signal limit
+  if(arm_set_command(2, "SLP", 1381600) <= 0) // set soft right limit
     return -1;
      
-  if(arm_set_command(3, "SLN", -362963) <= 0) // set pwm drive signal limit
+  if(arm_set_command(3, "SLN", -362963) <= 0) // set soft left limit
     return -1;
       
-  if(arm_set_command(3, "SLP", 347340) <= 0) // set pwm drive signal limit
+  if(arm_set_command(3, "SLP", 351000) <= 0) // set soft right limit
     return -1;
       
-  if(arm_set_command(4, "SLN", -138600) <= 0) // set pwm drive signal limit
+  if(arm_set_command(4, "SLN", -138600) <= 0) // set soft left limit
     return -1;
       
-  if(arm_set_command(4, "SLP", 138600) <= 0) // set pwm drive signal limit
+  if(arm_set_command(4, "SLP", 138600) <= 0) // set soft right limit
     return -1;
       
-  if(arm_set_command(5, "SLN", -253440) <= 0) // set pwm drive signal limit
+  if(arm_set_command(5, "SLN", -253440) <= 0) // set soft left limit
     return -1;
       
-  if(arm_set_command(5, "SLP", 298496) <= 0) // set pwm drive signal limit
+  if(arm_set_command(5, "SLP", 298496) <= 0) // set soft right limit
     return -1;
     
-  if(arm_set_command(6, "SLN", -844800) <= 0) // set pwm drive signal limit
+  if(arm_set_command(6, "SLN", -844800) <= 0) // set soft left limit
     return -1;
       
-  if(arm_set_command(6, "SLP", 844800) <= 0) // set pwm drive signal limit
+  if(arm_set_command(6, "SLP", 844800) <= 0) // set soft right limit
     return -1;
       
-  if(arm_set_command_without_value(0, "SLE") <= 0)  // Disable software limit  
+  if(arm_set_command_without_value(0, "SLE") <= 0)  // Enable software limit  
     return -1;
 
   if(arm_set_command_without_value(0, "BRKSRV") <= 0)	//release brake only with servo active 
     return -1;
-    
+
   return 1;
+}
+
+
+int arm_home_start(int index)
+{
+  if(arm_set_command_without_value(0, "ZS") <= 0)	//Clear faults
+    return -1;
+    
+  if(arm_set_command_without_value(index, "MDS") <= 0)	//Clear faults
+    return -1;
+    
+  if(arm_set_command(index, "KP", 3200) <= 0) // limiting current
+    return -1;
+    
+  if(arm_set_command(index, "KD", 10200) <= 0) // limiting current
+    return -1;
+    
+  if(arm_set_command_without_value(index, "F") <= 0)	//Clear faults
+    return -1;
+    
+  if(arm_set_command_without_value(index, "SLD") <= 0)  // Disable software limit  
+    return -1;
+      
+  if(arm_set_command(index, "AMPS", 200) <= 0) // limiting current
+    return -1;
+    
+  if(arm_set_command(index, "VT", 100 * arm_link[index - 1].gear) <= 0) // set velocity
+    return -1;
+    
+  /*if(arm_set_command(index, "ADT", 1000) <= 0) // set acceleration
+    return -1;*/
+    
+  if(arm_set_command_without_value(index, "MV") <= 0)  // Set velocity mode  
+    return -1;
+  
+  arm_set_command(0, "c", 0);
+  
+  if(arm_set_command_without_value(index, "G") <= 0)  // Go
+    return -1;
+    
+  if(arm_set_command_without_value(index, "REA") <= 0)  // Report error position
+    return -1;
+    
+  return 0;
 }
 
 void arm_set_max_velocity(int index, long velocity)
@@ -1019,7 +1257,7 @@ int arm_start_xyz(void)
   for(i = 0; i < MOTOR_NUMBER; i++)
   {
     arm_link[i].trajectory_status = 0;
-    arm_link[i].timeout_counter = 0;
+    //arm_link[i].timeout_counter = 0;
   }
   
   arm_link[MOTOR_NUMBER - 1].actual_position = 1;
@@ -1050,7 +1288,7 @@ int arm_start_xyz(void)
   if(arm_set_command(6, "PT", arm_link[5].actual_position) <= 0) //set velocity target
     return -1;
 
-  if(arm_set_command_without_value(0, "MP") <= 0)	//set velocity mode 
+  if(arm_set_command_without_value(0, "MP") <= 0)	//set position mode 
     return -1;
 
   if(arm_set_command(1, "VT", arm_link[0].velocity_target_limit) <= 0) //set velocity target
@@ -1099,12 +1337,16 @@ int arm_stop(int index)
     if(arm_set_command_without_value(index, "X") <= 0) //slow motion to stop
       return -1;
 
-    actuator_set_command(0);
+    if((MOTOR_NUMBER > SMART_MOTOR_NUMBER) && (arm_link[6].timeout_counter < LINK_TIMEOUT_LIMIT))
+      actuator_set_command(0);
   }
   else
   {
-    if(index == MOTOR_NUMBER)
-      actuator_set_command(0);
+    if((MOTOR_NUMBER > SMART_MOTOR_NUMBER) && (index == MOTOR_NUMBER))
+    {
+      if(arm_link[6].timeout_counter < LINK_TIMEOUT_LIMIT)
+        actuator_set_command(0);
+    }
     else
     {
       if(arm_set_command_without_value(index, "X") <= 0) //slow motion to stop
@@ -1232,12 +1474,15 @@ int arm_move(unsigned char triplet_selected, float value1, float value2, float v
       break;
 
     case 3:
-      if(value1 > 0)
-        actuator_set_command(30000);
-      else if(value1 < 0)
-        actuator_set_command(-30000);
-      else
-        actuator_set_command(0);
+      if(arm_link[6].timeout_counter < LINK_TIMEOUT_LIMIT)
+      {
+        if(value1 > 0)
+          actuator_set_command(30000);
+        else if(value1 < 0)
+          actuator_set_command(-30000);
+        else
+          actuator_set_command(0);
+      }
       break;
   
     default:
@@ -1279,19 +1524,19 @@ int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, flo
   switch(triplet_selected)
   {
     case 1:
-      tetha0 = arm_link[0].actual_position * M_PI / (180 * arm_encoder_factor * arm_link[0].gear);
+      tetha0 = arm_link[0].actual_position * M_PI * arm_encoder_factor / (180 * arm_link[0].gear);
       
       arm_ik_ang(0, value2, value3, &tetha0, &tetha1, &tetha2);
 
       if(wrist_position_mode != 1)
       {
         arm_start_xyz();
-            
+
         arm_set_command_without_value(1, "MV");
-    
+
         wrist_position_mode = 1;
-        link_4_actual_position = arm_link[4].actual_position * M_PI / (180 * arm_encoder_factor * arm_link[4].gear) - tetha1 - tetha2;
-        link_5_actual_position = arm_link[5].actual_position * M_PI / (180 * arm_encoder_factor * arm_link[5].gear) - tetha0;
+        link_4_actual_position = arm_link[4].actual_position * M_PI * arm_encoder_factor / (180 * arm_link[4].gear) - tetha1 - tetha2;
+        link_5_actual_position = arm_link[5].actual_position * M_PI * arm_encoder_factor / (180 * arm_link[5].gear) - tetha0;
         break;
       }
 
@@ -1302,12 +1547,12 @@ int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, flo
       arm_link[5].trajectory_status = 1;
       
       arm_set_command(1, "VT", (long)(value1 * arm_link[0].velocity_target_limit));
-      arm_set_command(2, "PT", (long)(tetha1 * 180 * arm_encoder_factor * arm_link[1].gear / M_PI));
-      arm_set_command(3, "PT", (long)(tetha2 * 180 * arm_encoder_factor * arm_link[2].gear / M_PI));
-      arm_set_command(5, "PT", (long)((link_4_actual_position + tetha1 + tetha2) * 180 * arm_encoder_factor * arm_link[4].gear / M_PI));
-      arm_set_command(6, "PT", (long)((link_5_actual_position + tetha0) * 180 * arm_encoder_factor * arm_link[5].gear / M_PI));
+      arm_set_command(2, "PT", (long)(tetha1 * 180 * arm_link[1].gear / (M_PI * arm_encoder_factor)));
+      arm_set_command(3, "PT", (long)(tetha2 * 180 * arm_link[2].gear / (M_PI * arm_encoder_factor)));
+      arm_set_command(5, "PT", (long)((link_4_actual_position + tetha1 + tetha2) * 180 * arm_link[4].gear / (M_PI * arm_encoder_factor)));
+      arm_set_command(6, "PT", (long)((link_5_actual_position + tetha0) * 180 * arm_link[5].gear / (M_PI * arm_encoder_factor)));
 
-      //printf("2 %ld 3 %ld\n", (long)(tetha1 * 180 * arm_encoder_factor * arm_link[1].gear / M_PI), (long)(tetha2 * 180 * arm_encoder_factor * arm_link[2].gear / M_PI));
+      //printf("2 %ld 3 %ld\n", (long)(tetha1 * 180 * arm_link[1].gear / (M_PI* arm_encoder_factor )), (long)(tetha2 * 180 * arm_link[2].gear / (M_PI * arm_encoder_factor)));
       arm_set_command_without_value(0, "G");
       arm_set_command(0, "c", 0);
       break;
@@ -1339,12 +1584,15 @@ int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, flo
       break;
 
     case 3:
-      if(value1 > 0)
-        actuator_set_command(30000);
-      else if(value1 < 0)
-        actuator_set_command(-30000);
-      else
-        actuator_set_command(0);
+      if(arm_link[6].timeout_counter < LINK_TIMEOUT_LIMIT)
+      {
+        if(value1 > 0)
+          actuator_set_command(30000);
+        else if(value1 < 0)
+          actuator_set_command(-30000);
+        else
+          actuator_set_command(0);
+      }
       break;
   
     default:
@@ -1366,21 +1614,27 @@ int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, flo
 int arm_query_position(int link_to_query)
 {
   int automatic_query = 0;
-  
+
   if(link_to_query > 0)
   {
+    //printf("Arm query %d\n", link_to_query);
+    
     // If it's a smartmotor
-    if(link_to_query < MOTOR_NUMBER)
+    if(link_to_query <= SMART_MOTOR_NUMBER)
       arm_set_command_without_value(link_to_query, "RPA");
-    else
+    else if((MOTOR_NUMBER == 7) && (link_to_query == 7))
       actuator_request_position();
   }
   else
-  {
-    for(automatic_query = 1; automatic_query < MOTOR_NUMBER; automatic_query++)
+  {   
+    for(automatic_query = 1; automatic_query <= SMART_MOTOR_NUMBER; automatic_query++)
       arm_set_command_without_value(automatic_query, "RPA");
       
-    actuator_request_position();
+    if((MOTOR_NUMBER > SMART_MOTOR_NUMBER) && (arm_link[MOTOR_NUMBER - 1].timeout_counter < LINK_TIMEOUT_LIMIT))
+    {
+      printf("Request actuator position\n");
+      actuator_request_position();
+    }
   }
 
   return 1;
@@ -1393,23 +1647,24 @@ int arm_query_trajectory(int link_to_query)
   if(link_to_query > 0)
   {
     // If it's a smartmotor
-    if(link_to_query < MOTOR_NUMBER)
+    if(link_to_query <= SMART_MOTOR_NUMBER)
       arm_set_command_without_value(link_to_query, "RB(0,2)");
-    else
+    else if((MOTOR_NUMBER > SMART_MOTOR_NUMBER) && (link_to_query == MOTOR_NUMBER))
       actuator_request_trajectory();
   }
   else
   {
-    for(automatic_query = 1; automatic_query <= MOTOR_NUMBER; automatic_query++)
+    for(automatic_query = 1; automatic_query <= SMART_MOTOR_NUMBER; automatic_query++)
     {
       if(arm_link[automatic_query - 1].trajectory_status > 0)
-      {
-        if(automatic_query == MOTOR_NUMBER)
-           actuator_request_trajectory();
-        else
-          arm_set_command_without_value(automatic_query, "RB(0,2)");
-      }
+        arm_set_command_without_value(automatic_query, "RB(0,2)");
     }
+    
+    if((MOTOR_NUMBER > SMART_MOTOR_NUMBER) && (automatic_query == MOTOR_NUMBER))
+    {
+      if(arm_link[MOTOR_NUMBER - 1].trajectory_status > 0)
+        actuator_request_trajectory();
+    }  
   }
 
   return 1;
@@ -1455,6 +1710,11 @@ int arm_query_trajectory(int link_to_query)
   return 1;
 }*/
 
+void arm_automatic_motion_xyz_update_cursor()
+{
+  motion_file_cursor_position = motion_file_cursor_position_temp;
+}
+
 /* Read position target from file and call arm_start routine */
 int arm_automatic_motion_xyz_start(char *motion_file)
 {
@@ -1463,19 +1723,23 @@ int arm_automatic_motion_xyz_start(char *motion_file)
   float motor_position_target[MOTOR_NUMBER];
   float yz_position_target[3];
   float max_yz_range;
-  
+  long motor_step[MOTOR_NUMBER];
+        
   if(motion_file != NULL)
   {
     motion_file_cursor_position = 0;
+    motion_file_cursor_position_temp = 0;
     strcpy(current_motion_file, motion_file);
   }
+  else
+    motion_file_cursor_position_temp = motion_file_cursor_position;
   
   // get final xyz coordinates
-  return_value = arm_read_path_xyz(current_motion_file, motor_position_target, &motion_file_cursor_position);
+  return_value = arm_read_path_xyz(current_motion_file, motor_position_target, &motion_file_cursor_position_temp);
   
-  if(motion_file != NULL)
-    arm_start_xyz();
-    
+  /*if(motion_file != NULL)
+    arm_start_xyz();*/
+
   // if collect an error load 
   if(return_value == -1)
   {
@@ -1483,8 +1747,8 @@ int arm_automatic_motion_xyz_start(char *motion_file)
     {
       arm_link[i].position_target = arm_link[i].actual_position;
       
-      if(arm_set_command(i + 1, "PT", arm_link[i].position_target) <= 0)
-        return -1;
+      //if(arm_set_command(i + 1, "PT", arm_link[i].position_target) <= 0)
+      //  return -1;
     }
     
     arm_auto_motion_xyz_mode = 0;
@@ -1496,8 +1760,8 @@ int arm_automatic_motion_xyz_start(char *motion_file)
     {
       arm_link[i].position_target = arm_link[i].actual_position;
       
-      if(arm_set_command(i + 1, "PT", arm_link[i].position_target) <= 0) 
-        return -1;
+      //if(arm_set_command(i + 1, "PT", arm_link[i].position_target) <= 0) 
+      //  return -1;
     }
     
     arm_auto_motion_xyz_mode = 0;
@@ -1506,7 +1770,14 @@ int arm_automatic_motion_xyz_start(char *motion_file)
   else if(return_value == 4)
   {
     for(i = 0; i < MOTOR_NUMBER; i++)
+    {
       arm_link[i].trajectory_status = 1;
+      
+      if(motion_file != NULL)
+        motor_step[i] = arm_link[i].actual_position;
+      else
+        motor_step[i] = arm_link[i].position_target;
+    }
       
     for(i = 0; i < 4; i++)
     {
@@ -1516,15 +1787,18 @@ int arm_automatic_motion_xyz_start(char *motion_file)
         switch(i)
         {
           case 0:
-            motor_position_target[0] = (double)arm_link[0].actual_position * M_PI / (180 * arm_encoder_factor * arm_link[0].gear);
+            if(motion_file != NULL)
+              motor_position_target[0] = (double)arm_link[0].actual_position * M_PI * arm_encoder_factor / (180 * arm_link[0].gear);
+            else
+              motor_position_target[0] = (double)arm_link[0].position_target * M_PI * arm_encoder_factor / (180 * arm_link[0].gear);
             break;
             
           case 1:
-            arm_ee_xyz(NULL, &motor_position_target[1], NULL);
+            arm_ee_xyz(motor_step, NULL, &motor_position_target[1], NULL);
             break;
             
           case 2:
-            arm_ee_xyz(NULL, NULL, &motor_position_target[2]);
+            arm_ee_xyz(motor_step, NULL, NULL, &motor_position_target[2]);
             break;
             
           case 3:
@@ -1534,39 +1808,43 @@ int arm_automatic_motion_xyz_start(char *motion_file)
       }
     }
 
-    // set the final angle
+    // set position for last motors
     arm_ik_ang(0, motor_position_target[1], motor_position_target[2], 
                &yz_position_target[0], &yz_position_target[1], &yz_position_target[2]);
 
-    arm_link[0].position_target = (long)(motor_position_target[0] * 180 * arm_encoder_factor * arm_link[0].gear / M_PI);
+    arm_link[0].position_target = (long)(motor_position_target[0] * 180 * (double)arm_link[0].gear / (M_PI * arm_encoder_factor));
     
     for(i = 1; i < 3; i++)
-      arm_link[i].position_target = (long)(yz_position_target[i] * 180 * arm_encoder_factor * arm_link[i].gear / M_PI);
+      arm_link[i].position_target = (long)(yz_position_target[i] * 180 * (double)arm_link[i].gear / (M_PI * arm_encoder_factor));
 
     arm_link[3].position_target = 0;
-    arm_link[4].position_target = (long)((double)90 * arm_encoder_factor + (double)arm_link[1].actual_position / arm_link[1].gear + (double)arm_link[2].actual_position / arm_link[2].gear) * arm_link[4].gear;
-    arm_link[5].position_target = (long)((double)90 * arm_encoder_factor + (double)arm_link[0].actual_position / arm_link[0].gear) * arm_link[5].gear;
+    //arm_link[4].position_target = (long)((double)90 / arm_encoder_factor + (double)arm_link[1].actual_position / arm_link[1].gear + (double)arm_link[2].actual_position / arm_link[2].gear) * arm_link[4].gear;
+    arm_link[4].position_target = (long)((90.0 / arm_encoder_factor + (double)arm_link[1].position_target / (double)arm_link[1].gear + (double)arm_link[2].position_target / (double)arm_link[2].gear) * (double)arm_link[4].gear);
+    //arm_link[5].position_target = (long)((double)90 / arm_encoder_factor + (double)arm_link[0].actual_position / arm_link[0].gear) * arm_link[5].gear;
+
+    arm_link[5].position_target = (long)((90.0 / arm_encoder_factor + (double)arm_link[0].position_target / (double)arm_link[0].gear) * (double)arm_link[5].gear);
     
-    //arm_link[4].position_target = (long)((double)90 * arm_encoder_factor + (double)arm_link[1].position_target / arm_link[1].gear + (double)arm_link[2].position_target / arm_link[2].gear) * arm_link[4].gear;
+    //arm_link[4].position_target = (long)((double)90 / arm_encoder_factor + (double)arm_link[1].position_target / arm_link[1].gear + (double)arm_link[2].position_target / arm_link[2].gear) * arm_link[4].gear;
 
 //    if(arm_link[4].position_target > LINK5_SLP) 
-//      arm_link[4].position_target = LINK5_SLP - arm_encoder_factor * arm_link[4].gear;
+//      arm_link[4].position_target = LINK5_SLP - arm_link[4].gear / arm_encoder_factor;
           
   //  if(arm_link[4].position_target < LINK5_SLN)
-     // arm_link[4].position_target = LINK5_SLN + arm_encoder_factor * arm_link[4].gear; 
+     // arm_link[4].position_target = LINK5_SLN + arm_link[4].gear / arm_encoder_factor; 
           
-//    arm_link[5].position_target = (long)((double)90 * arm_encoder_factor + (double)arm_link[0].position_target / arm_link[0].gear) * arm_link[5].gear;
+//    arm_link[5].position_target = (long)((double)90 / arm_encoder_factor + (double)arm_link[0].position_target / arm_link[0].gear) * arm_link[5].gear;
 
   //  if(arm_link[5].position_target > LINK6_SLP) 
-    //  arm_link[5].position_target = LINK6_SLP - arm_encoder_factor * arm_link[5].gear;
+    //  arm_link[5].position_target = LINK6_SLP - arm_link[5].gear / arm_encoder_factor;
           
 //    if(arm_link[5].position_target < LINK6_SLN)
-    //  arm_link[5].position_target = LINK6_SLN + arm_encoder_factor * arm_link[5].gear;
+    //  arm_link[5].position_target = LINK6_SLN + arm_link[5].gear / arm_encoder_factor;
     
-    arm_link[6].position_target = (long)(motor_position_target[3]);
+    if(MOTOR_NUMBER > SMART_MOTOR_NUMBER)
+      arm_link[6].position_target = (long)(motor_position_target[3]);
     
     // get current position
-    arm_ee_xyz(0, &arm_incremental_step_automotion_y, &arm_incremental_step_automotion_z);
+    /*arm_ee_xyz(0, &arm_incremental_step_automotion_y, &arm_incremental_step_automotion_z);
                        
     arm_incremental_step_automotion_y_sign = signum(motor_position_target[1] - arm_incremental_step_automotion_y);
     arm_incremental_step_automotion_z_sign = signum(motor_position_target[2] - arm_incremental_step_automotion_z);
@@ -1599,8 +1877,8 @@ int arm_automatic_motion_xyz_start(char *motion_file)
                &motor_position_target[0], &motor_position_target[1], &motor_position_target[2]);
 
     // convert from radiant to step
-    motor_position_target[1] *= 180 * arm_encoder_factor * arm_link[1].gear / M_PI;
-    motor_position_target[2] *= 180 * arm_encoder_factor * arm_link[2].gear / M_PI;
+    motor_position_target[1] *= 180 * arm_link[1].gear / (M_PI * arm_encoder_factor);
+    motor_position_target[2] *= 180 * arm_link[2].gear / (M_PI * arm_encoder_factor);
         
     if(arm_set_command(1, "PT", arm_link[0].position_target) <= 0)
       return -1;
@@ -1617,47 +1895,71 @@ int arm_automatic_motion_xyz_start(char *motion_file)
         return -1;
     }
 
-    arm_set_command_without_value(0, "G");
+    arm_set_command_without_value(0, "G");*/
     
-    if(arm_link[6].position_target > 0)
-      actuator_set_command(30000);
-    else
-      actuator_set_command(-30000);
+    /*if(MOTOR_NUMBER > SMART_MOTOR_NUMBER)
+    {
+      if(arm_link[6].position_target > 0)
+        actuator_set_command(30000);
+      else
+        actuator_set_command(-30000);
+    }*/
     
     arm_auto_motion_xyz_mode = 1;
   }
-  else if(return_value == MOTOR_NUMBER)
-  {
-    for(i = 0; i < MOTOR_NUMBER; i++)
+  else if(return_value >= SMART_MOTOR_NUMBER)
+  {   
+    for(i = 0; i < SMART_MOTOR_NUMBER; i++)
     {
       arm_link[i].trajectory_status = 1;
       if(motor_position_target[i] != motor_position_target[i])
-        arm_link[i].position_target = arm_link[i].actual_position;
+      {
+        if(motion_file != NULL)
+          arm_link[i].position_target = arm_link[i].actual_position;
+        else
+          arm_link[i].position_target = arm_link[i].position_target;
+      }
       else
         arm_link[i].position_target = (long)motor_position_target[i];
       
-      if(arm_set_command(i + 1, "PT", arm_link[i].position_target) <= 0)
-        return -1;
+      //if(arm_set_command(i + 1, "PT", arm_link[i].position_target) <= 0)
+      //  return -1;
     }
     
-    arm_set_command_without_value(0, "G");
+    //arm_set_command_without_value(0, "G");
 
-    if(arm_link[6].position_target > 0)
-      actuator_set_command(30000);
-    else
-      actuator_set_command(-30000);
+    if(return_value == MOTOR_NUMBER)
+    {
+      arm_link[MOTOR_NUMBER -1].trajectory_status = 1;
+      if(motor_position_target[MOTOR_NUMBER -1] != motor_position_target[MOTOR_NUMBER -1])
+        arm_link[MOTOR_NUMBER -1].position_target = arm_link[MOTOR_NUMBER -1].actual_position;
+      else
+        arm_link[MOTOR_NUMBER -1].position_target = (long)motor_position_target[MOTOR_NUMBER -1];
+      
+      /*if(arm_link[6].position_target > 0)
+        actuator_set_command(30000);
+      else
+        actuator_set_command(-30000);*/
+    }
     
     arm_auto_motion_xyz_mode = 0;
   }
   else 
    return -1;
  
+  /*for(i = 0; i < MOTOR_NUMBER; i++)
+  {
+    printf("Target Position [%d]: %ld\n", i, arm_link[i].position_target);
+  }
+  
+      printf("\n");*/
   return return_value;
 }
 
 void arm_automatic_motion_abort()
 {
   motion_file_cursor_position = 0;
+  motion_file_cursor_position_temp = 0;
 }
 
 /* At every call this function check if a motor have been arrived to
@@ -1678,15 +1980,15 @@ void arm_automatic_motion_abort()
     if((arm_direction >= 0))
     {
       // if link is far from the target point, set the max velocity target
-      if(arm_link[last_link_queried - 1].actual_position >= (arm_link[last_link_queried -1].position_target + 10 * arm_encoder_factor * arm_link[last_link_queried -1].gear))
+      if(arm_link[last_link_queried - 1].actual_position >= (arm_link[last_link_queried -1].position_target + 10 * arm_link[last_link_queried -1].gear / arm_encoder_factor))
         arm_link[last_link_queried - 1].velocity_target = -(long)arm_link[last_link_queried - 1].velocity_target_limit;
-      else if(arm_link[last_link_queried - 1].actual_position >= (arm_link[last_link_queried -1].position_target + 5 * arm_encoder_factor * arm_link[last_link_queried -1].gear))
+      else if(arm_link[last_link_queried - 1].actual_position >= (arm_link[last_link_queried -1].position_target + 5 * arm_link[last_link_queried -1].gear / arm_encoder_factor))
         arm_link[last_link_queried - 1].velocity_target = -(long)arm_link[last_link_queried - 1].velocity_target_limit/2;
       else
         arm_link[last_link_queried - 1].velocity_target = -(long)arm_link[last_link_queried - 1].velocity_target_limit/2;
         
       //printf("velocity target for %i: %ld, velocity_target_limit: %ld\n",last_link_queried, arm_link[last_link_queried - 1].velocity_target, arm_link[last_link_queried - 1].velocity_target_limit);
-      if((arm_link[last_link_queried - 1].actual_position < (arm_link[last_link_queried -1].position_target + (long)(arm_encoder_factor * arm_link[last_link_queried -1].gear/2))) && 
+      if((arm_link[last_link_queried - 1].actual_position < (arm_link[last_link_queried -1].position_target + (long)(arm_link[last_link_queried -1].gear/(2 * arm_encoder_factor)))) && 
         ((link_homing_complete & (int)pow(2, last_link_queried - 1)) == 0))
       {
         //printf("Motor%i Actual position: %ld, Position target range: %ld\n", last_link_queried, arm_link[last_link_queried - 1].actual_position, arm_link[last_link_queried -1].position_target + 400);
@@ -1709,15 +2011,15 @@ void arm_automatic_motion_abort()
     if((arm_direction < 0))
     {
       // if link is far from the target point, set the max velocity target
-      if(arm_link[last_link_queried - 1].actual_position <= (arm_link[last_link_queried -1].position_target - 10*arm_encoder_factor * arm_link[last_link_queried -1].gear))
+      if(arm_link[last_link_queried - 1].actual_position <= (arm_link[last_link_queried -1].position_target - 10 * arm_link[last_link_queried -1].gear / arm_encoder_factor))
         arm_link[last_link_queried - 1].velocity_target = arm_link[last_link_queried - 1].velocity_target_limit;
-      else if(arm_link[last_link_queried - 1].actual_position <= (arm_link[last_link_queried -1].position_target - 5*arm_encoder_factor * arm_link[last_link_queried -1].gear))
+      else if(arm_link[last_link_queried - 1].actual_position <= (arm_link[last_link_queried -1].position_target - 5 * arm_link[last_link_queried -1].gear / arm_encoder_factor))
         arm_link[last_link_queried - 1].velocity_target = (long)arm_link[last_link_queried - 1].velocity_target_limit/2;
       else
         arm_link[last_link_queried - 1].velocity_target = (long)arm_link[last_link_queried - 1].velocity_target_limit/4;
   
       //printf("velocity target for %i: %ld\n",last_link_queried, arm_link[last_link_queried - 1].velocity_target);
-      if((arm_link[last_link_queried - 1].actual_position > (arm_link[last_link_queried -1].position_target - (long)(arm_encoder_factor * arm_link[last_link_queried -1].gear / 2))) &&
+      if((arm_link[last_link_queried - 1].actual_position > (arm_link[last_link_queried -1].position_target - (long)(arm_link[last_link_queried -1].gear / (2* arm_encoder_factor)))) &&
         ((link_homing_complete & (int)pow(2, last_link_queried - 1))  == 0))
       {
         //printf("Motor%i Arm direction: %ld, Actual position: %ld, Position target range: %ld\n", last_link_queried, arm_direction, arm_link[last_link_queried - 1].actual_position, arm_link[last_link_queried -1].position_target - 400);
@@ -1787,8 +2089,8 @@ int arm_automatic_motion_xyz_update(int index)
     if(arm_auto_motion_xyz_mode == 1)
     {
       // calculate final destination in xyz coordinates
-      arm_ee_tetha_xyz(0, arm_link[1].position_target * M_PI/ (arm_encoder_factor * arm_link[1].gear * 180), 
-                       arm_link[2].position_target * M_PI/ (arm_encoder_factor * arm_link[2].gear * 180), 
+      arm_ee_tetha_xyz(0, arm_link[1].position_target * arm_encoder_factor * M_PI/ (arm_link[1].gear * 180), 
+                       arm_link[2].position_target * arm_encoder_factor * M_PI/ (arm_link[2].gear * 180), 
                        &motor_position_target[0], &motor_position_target[1], &motor_position_target[2]);
       
       if(((motor_position_target[1] - arm_incremental_step_automotion_y) * arm_incremental_step_automotion_y_sign > 0) ||
@@ -1805,8 +2107,8 @@ int arm_automatic_motion_xyz_update(int index)
                    &motor_position_target[0], &motor_position_target[1], &motor_position_target[2]);
 
         // convert from radiant to step
-        motor_position_target[1] *= 180 * arm_encoder_factor * arm_link[1].gear / M_PI;
-        motor_position_target[2] *= 180 * arm_encoder_factor * arm_link[2].gear / M_PI;
+        motor_position_target[1] *= 180 * arm_link[1].gear / (M_PI * arm_encoder_factor);
+        motor_position_target[2] *= 180 * arm_link[2].gear / (M_PI * arm_encoder_factor);
       
         arm_set_command(2, "PT", (long)motor_position_target[1]);
         arm_set_command(3, "PT", (long)motor_position_target[2]);
@@ -1824,8 +2126,8 @@ int arm_automatic_motion_xyz_update(int index)
       /****** Checks if all joint have arrived to the final position ********/
       for(i = 1; i < 4; i++)
       {
-        if((arm_link[i - 1].actual_position > (arm_link[i -1].position_target + (long)(arm_encoder_factor * arm_link[i -1].gear / 3))) ||
-           (arm_link[i - 1].actual_position < (arm_link[i -1].position_target - (long)(arm_encoder_factor * arm_link[i -1].gear / 3))))
+        if((arm_link[i - 1].actual_position > (arm_link[i -1].position_target + (long)(arm_link[i -1].gear / (3 * arm_encoder_factor)))) ||
+           (arm_link[i - 1].actual_position < (arm_link[i -1].position_target - (long)(arm_link[i -1].gear / (3 * arm_encoder_factor)))))
         {
           return 0;
         }
@@ -1835,8 +2137,8 @@ int arm_automatic_motion_xyz_update(int index)
     {
       for(i = 1; i < MOTOR_NUMBER; i++)
       {
-        if((arm_link[i - 1].actual_position > (arm_link[i -1].position_target + (long)(arm_encoder_factor * arm_link[i -1].gear / 3))) ||
-           (arm_link[i - 1].actual_position < (arm_link[i -1].position_target - (long)(arm_encoder_factor * arm_link[i -1].gear / 3))))
+        if((arm_link[i - 1].actual_position > (arm_link[i -1].position_target + (long)(arm_link[i -1].gear / (3 * arm_encoder_factor)))) ||
+           (arm_link[i - 1].actual_position < (arm_link[i -1].position_target - (long)(arm_link[i -1].gear / (3 * arm_encoder_factor)))))
         {
           return 0;
         }
@@ -1850,8 +2152,8 @@ int arm_automatic_motion_xyz_update(int index)
   {
     if(index != MOTOR_NUMBER)
     {
-      if((arm_link[index - 1].actual_position > (arm_link[index -1].position_target + (long)(arm_encoder_factor * arm_link[index -1].gear / 3))) ||
-         (arm_link[index - 1].actual_position < (arm_link[index -1].position_target - (long)(arm_encoder_factor * arm_link[index -1].gear / 3))))
+      if((arm_link[index - 1].actual_position > (arm_link[index -1].position_target + (long)(arm_link[index -1].gear / (3 * arm_encoder_factor)))) ||
+         (arm_link[index - 1].actual_position < (arm_link[index -1].position_target - (long)(arm_link[index -1].gear / (3 * arm_encoder_factor)))))
       {
         return 0;
       }
@@ -1945,7 +2247,7 @@ int arm_read_path_xyz(const char *file_path, float *motor_position_target, int *
 
   while((read = getline(&line, &len, file)) != -1)
   {
-    //printf("Line read: %s Byte read: %d\n", line, read);
+    //printf("Line read: %s Byte read: %d, Cursor: %d\n, File: %s", line, read, *cursor_position, file_path);
     if((*line == '#') || (read < 7))
     {
       *cursor_position += read;
@@ -2020,7 +2322,7 @@ void arm_ik_ang(float pw_x, float pw_y, float pw_z, float *Teta1, float *Teta2, 
   //Teta1 = Atan2(pw_y, pw_x) '
 }
 
-void arm_ee_xyz(float *pw_x, float *pw_y, float *pw_z)
+void arm_ee_xyz(long motor_step[], float *pw_x, float *pw_y, float *pw_z)
 {
   float a2;
   float a3;
@@ -2030,9 +2332,9 @@ void arm_ee_xyz(float *pw_x, float *pw_y, float *pw_z)
 
   float q[3];
  
-  q[0] = arm_link[0].actual_position * M_PI / (arm_encoder_factor * arm_link[0].gear * 180);
-  q[1] = arm_link[1].actual_position * M_PI/ (arm_encoder_factor * arm_link[1].gear * 180);
-  q[2] = arm_link[2].actual_position * M_PI/ (arm_encoder_factor * arm_link[2].gear * 180);
+  q[0] = motor_step[0] * M_PI * arm_encoder_factor / (arm_link[0].gear * 180);
+  q[1] = motor_step[1] * M_PI * arm_encoder_factor / (arm_link[1].gear * 180);
+  q[2] = motor_step[2] * M_PI * arm_encoder_factor / (arm_link[2].gear * 180);
   
   if(pw_y != NULL)
     *pw_y = a2 * cos(q[1]) + a3 * cos(q[2] + q[1]);

@@ -75,7 +75,7 @@ int com_open(char *device_name, __u32 rate, char parity,
   rs232_buffer_rx_overrun = 0;
   rs232_buffer_rx_data_count = 0;
   
-  fd = open(device_name, O_RDWR | O_NOCTTY | O_NONBLOCK);
+  fd = open(device_name, O_RDWR | O_NOCTTY);
 
   if(fd < 0)
     return fd;
@@ -146,7 +146,7 @@ int com_open(char *device_name, __u32 rate, char parity,
     // no output processing, force 8 bit input
     //
 
-    newtio.c_cflag = local_rate | local_databits | local_stopbits | local_parity | CREAD | CLOCAL; 
+    newtio.c_cflag != (local_rate | local_databits | local_stopbits | local_parity | CREAD | CLOCAL); 
     newtio.c_cflag &= ~(PARODD | PARENB | CRTSCTS);
     //
     // Input flags - Turn off input processing
@@ -156,10 +156,10 @@ int com_open(char *device_name, __u32 rate, char parity,
     // no XON/XOFF software flow control
     //
     //newtio.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | INPCK | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF);
-    newtio.c_iflag = ~(IGNPAR | IGNBRK | ICRNL | INLCR |
+    newtio.c_iflag &= ~(IGNPAR | IGNBRK | ICRNL | INLCR |
                         ISTRIP | IXON | IXOFF | IXANY | IGNCR);
     
-    newtio.c_iflag |= BRKINT | PARMRK | INPCK;
+    newtio.c_iflag |= (BRKINT | PARMRK | INPCK);
     
     //
     // Output flags - Turn off output processing
@@ -171,7 +171,7 @@ int com_open(char *device_name, __u32 rate, char parity,
     // config.c_oflag &= ~(OCRNL | ONLCR | ONLRET |
     //                     ONOCR | ONOEOT| OFILL | OLCUC | OPOST);
     //newtio.c_oflag &= ~OPOST;
-    newtio.c_oflag = 0;
+    newtio.c_oflag &= ~OPOST;
     
     //
     // No line processing:
@@ -182,15 +182,15 @@ int com_open(char *device_name, __u32 rate, char parity,
     
     
     //newtio.c_lflag = 0;
-    newtio.c_cc[VTIME] = 5; //inter-character timer unused
+    newtio.c_cc[VTIME] = 0; //inter-character timer unused
     newtio.c_cc[VMIN] = 1; //blocking read
 
-    //tcflush(fd, TCIFLUSH);
+    tcflush(fd, TCIFLUSH);
     
     if(cfsetispeed(&newtio, local_rate) < 0 || cfsetospeed(&newtio, local_rate) < 0) 
       return -1;
 
-    if(tcsetattr(fd, TCSAFLUSH, &newtio) < 0)
+    if(tcsetattr(fd, TCSANOW, &newtio) < 0)
       return -1;
 
     return fd;
@@ -258,7 +258,6 @@ int rs232_load_tx(unsigned char *data, unsigned int data_length)
   return 1;
 }
 
-// TODO: adattare la funzione per prendere più dati possibili (vedi rs232_unload_rx_unload_filtered)
 int rs232_unload_rx(unsigned char *data)
 {
   int length_to_write = 0;
@@ -269,11 +268,21 @@ int rs232_unload_rx(unsigned char *data)
   rs232_buffer_rx_full = 0;
  
   if(rs232_buffer_rx_ptr_rd < rs232_buffer_rx_ptr_wr)
+  {
+    // se non sono tornato all'inizio del buffer circolare, allora posso
+    // copiare tutti i dati in sequenza
     length_to_write = (rs232_buffer_rx_ptr_wr - rs232_buffer_rx_ptr_rd);
+    memcpy(data, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+  }
   else
+  {
+    // se sono tornato all'inizio del buffer circolare, devo eseguire la
+    // copia in due momenti
     length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_rd);
-
-  memcpy(data, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+    memcpy(data, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+    memcpy(&data[length_to_write], &rs232_buffer_rx, rs232_buffer_rx_ptr_wr + 1);
+    length_to_write = length_to_write + rs232_buffer_rx_ptr_wr;
+  }
 	
   rs232_buffer_rx_data_count -= length_to_write;
 
@@ -443,14 +452,71 @@ int rs232_write(int rs232_device)
     // circular buffer. So I can send only the data before restart the
     // buffer.
     if(rs232_buffer_tx_ptr_rd < rs232_buffer_tx_ptr_wr)
+    {
       length_to_write = (rs232_buffer_tx_ptr_wr - rs232_buffer_tx_ptr_rd);
+      
+      if(length_to_write > RS232_MAX_TX_LENGTH)
+        length_to_write = RS232_MAX_TX_LENGTH;
+      
+      bytes_sent = write(rs232_device, &rs232_buffer_tx[rs232_buffer_tx_ptr_rd], length_to_write);
+    }
     else
-      length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_tx_ptr_rd);
+    {
+      if((RS232_BUFFER_SIZE - rs232_buffer_tx_ptr_rd + rs232_buffer_tx_ptr_wr) > RS232_MAX_TX_LENGTH)
+      {
+        // devo capire quale parte del buffer supera RS232_MAX_TX_LENGTH
+        if((RS232_BUFFER_SIZE - rs232_buffer_tx_ptr_rd) > RS232_MAX_TX_LENGTH)
+          bytes_sent = write(rs232_device, &rs232_buffer_tx[rs232_buffer_tx_ptr_rd], RS232_MAX_TX_LENGTH);
+        else
+        {
+          length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_tx_ptr_rd);
+          bytes_sent = write(rs232_device, &rs232_buffer_tx[rs232_buffer_tx_ptr_rd], length_to_write);
+          
+          if(bytes_sent > 0)
+          {
+            //printf("bytes_sent: %i\n", bytes_sent);
+            /*for(i = 0; i < bytes_sent; i++)
+              printf("[%x]", rs232_buffer_tx[rs232_buffer_tx_ptr_rd + i]);
+            printf("\n");*/ 
+            rs232_buffer_tx_full = 0;
+            rs232_buffer_tx_data_count -= bytes_sent;
+            rs232_buffer_tx_ptr_rd += bytes_sent;
 
-    if(length_to_write > RS232_MAX_TX_LENGTH)
-      length_to_write = RS232_MAX_TX_LENGTH;
+            if(rs232_buffer_tx_ptr_rd == RS232_BUFFER_SIZE)
+              rs232_buffer_tx_ptr_rd = 0;
+            else if(rs232_buffer_tx_ptr_rd > RS232_BUFFER_SIZE)
+              printf("Circular buffer critical error\n");
+          }
+          
+          length_to_write = RS232_MAX_TX_LENGTH - (RS232_BUFFER_SIZE - rs232_buffer_tx_ptr_rd)
+          bytes_sent = write(rs232_device, rs232_buffer_tx, length_to_write);
+        }
+      }
+      else
+      {
+        // posso trasmettere tutti i dati nel buffer, ma sempre in due momenti
+        length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_tx_ptr_rd);
+        bytes_sent = write(rs232_device, &rs232_buffer_tx[rs232_buffer_tx_ptr_rd], length_to_write);
+        
+        if(bytes_sent > 0)
+        {
+          //printf("bytes_sent: %i\n", bytes_sent);
+          /*for(i = 0; i < bytes_sent; i++)
+            printf("[%x]", rs232_buffer_tx[rs232_buffer_tx_ptr_rd + i]);
+          printf("\n");*/ 
+          rs232_buffer_tx_full = 0;
+          rs232_buffer_tx_data_count -= bytes_sent;
+          rs232_buffer_tx_ptr_rd += bytes_sent;
 
-    bytes_sent = write(rs232_device, &rs232_buffer_tx[rs232_buffer_tx_ptr_rd], length_to_write);
+          if(rs232_buffer_tx_ptr_rd == RS232_BUFFER_SIZE)
+            rs232_buffer_tx_ptr_rd = 0;
+          else if(rs232_buffer_tx_ptr_rd > RS232_BUFFER_SIZE)
+            printf("Circular buffer critical error\n");
+        }
+          
+        bytes_sent = write(rs232_device, rs232_buffer_tx, rs232_buffer_tx_ptr_wr);
+      }
+    }
 
     if(bytes_sent > 0)
     {

@@ -2,6 +2,8 @@
 #define ARM_RS485_H_
 
 #define MOTOR_NUMBER 7
+#define SMART_MOTOR_NUMBER 6
+#define SMART_MOTOR_SYNC_INDEX 1
 #define LINK5_SLN -253440
 #define LINK5_SLP 298496
 #define LINK6_SLN -844800
@@ -64,6 +66,8 @@
 #define CRC_TABLE_SIZE 256
 #define INITIAL_CRC (0)
 
+#define LINK_TIMEOUT_LIMIT 10
+
 struct arm_rs485_frame
 {
   union
@@ -71,9 +75,15 @@ struct arm_rs485_frame
     struct
     {
       unsigned char index;
-      char command[61];
+      char command[58];
+      
       __u8 request_position;
       __u8 request_trajectory_status;
+      __u8 request_interpolation_status;
+      __u8 request_error_status;
+      __u8 request_mode;
+      
+      //__u16 interpolation_status;
     } arm_command_param;
 
     char arm_command[64];
@@ -91,6 +101,17 @@ struct arm_info
   long position_target;  // target position in motor step
   unsigned int timeout_counter;
   
+  // Interpolation param
+  __u8 slots;
+  __u8 pending_g;
+  __u8 ip_ready;
+  __u8 invalid_time_delta;
+  __u8 invalid_position_delta;
+  __u8 md_ready;
+  __u8 data_buffer_overflow;
+  __u8 data_buffer_underflow;
+  __u8 md_running;
+  
   // Fix param
   unsigned int link_length;  //link's length in mm
   long link_offset_x;  //offset along x axis
@@ -99,7 +120,7 @@ struct arm_info
   long gear;
 };
 
-extern const unsigned char arm_encoder_factor;
+extern const float arm_encoder_factor;
 
 extern unsigned char arm_rs485_buffer_tx_empty;
 extern unsigned char arm_rs485_buffer_tx_full;
@@ -124,9 +145,13 @@ void arm_rs485_flush_buffer_tx(void);
 int arm_rs485_buffer_tx_get_space(void);
 int arm_rs485_buffer_rx_get_space(void);
 int arm_rs485_load_tx(struct arm_rs485_frame data);
-int arm_rs485_write(int device, int *query_link, unsigned char *request_position, unsigned char *request_trajectory_status);
+int arm_rs485_write(int device, int *query_link, unsigned char *request_position, unsigned char *request_trajectory_status, 
+                    unsigned char *request_interpolation_status, unsigned char *request_error_status);
+int arm_rs485_get_last_message_write(struct arm_rs485_frame *arm_rs485_buffer);
+int arm_rs485_unload_interpolation(unsigned char *data);
 int arm_rs485_unload_rx(unsigned char *data);
 int arm_rs485_unload_rx_filtered(char *data, char token);
+int arm_rs485_unload_rx_multifiltered(char *data, char *token, char token_number);
 int arm_rs485_read(int rs232_device);
 
 int arm_init(int index, long kp, long ki, long kl, long kd, long kv, long adt, long vt, long amps);
@@ -134,6 +159,8 @@ void arm_set_max_velocity(int index, long velocity);
 //int arm_start(void);
 int arm_start_xyz(void);
 int arm_stop(int index);
+int arm_home_start(int index);
+
 //int arm_move(struct wwvi_js_event jse, __u16 joy_max_value);
 int arm_move(unsigned char triplet_selected, float value1, float value2, float value3);
 int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, float value3);
@@ -143,11 +170,13 @@ int arm_check_trajectory();
 int arm_set_command(int index, char *command, long value);
 int arm_set_command_without_value(int index, char *command);
 int actuator_set_command(long command);
+void actuator_get_status(struct arm_info *arm_link);
 int actuator_request_trajectory();
 int actuator_request_position();
 
 int arm_automatic_motion_velocity_start(char *motion_file);
 int arm_automatic_motion_xyz_start(char *motion_file);
+void arm_automatic_motion_xyz_update_cursor();
 int arm_automatic_motion_velocity_update();
 int arm_automatic_motion_xyz_update();
 void arm_automatic_motion_abort();
@@ -155,7 +184,7 @@ int arm_read_path_step(const char *file_path, long *motor_position_target, int *
 int arm_read_path_xyz(const char *file_path, float *motor_position_target, int *cursor_position);
 
 void arm_ik_ang(float pw_x, float pw_y, float pw_z, float *Teta1, float *Teta2, float *Teta3);
-void arm_ee_xyz(float *pw_x, float *pw_y, float *pw_z);
+void arm_ee_xyz(long motor_step[], float *pw_x, float *pw_y, float *pw_z);
 
 void arm_crc_initialize(void);
 __u16 arm_compute_crc_table_value(__u16);
