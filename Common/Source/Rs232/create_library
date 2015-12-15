@@ -1,0 +1,3 @@
+arm-linux-gnueabihf-gcc -Wall -c *.c -I/home/lucciu/beaglebone_code/Common/Include
+ar -cvq libbglrs232.a *.o
+mv libbglrs232.a ../../Lib

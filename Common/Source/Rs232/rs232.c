@@ -20,7 +20,7 @@
 volatile int STOP = FALSE;
 
 /* Prototype */
-int com_open(char *, __u32, char, int, int);
+int rs232_open(char *, __u32, char, int, int);
 
 void flush_device_input(int *);
 void flush_device_output(int *);
@@ -49,7 +49,7 @@ unsigned char rs232_buffer_rx_full = 0;
 unsigned char rs232_buffer_rx_overrun = 0;
 unsigned int rs232_buffer_rx_data_count = 0;  // number of byte received
 
-int com_open(char *device_name, __u32 rate, char parity,
+int rs232_open(char *device_name, __u32 rate, char parity,
              int data_bits, int stop_bits)
 {
   int fd;
@@ -146,7 +146,7 @@ int com_open(char *device_name, __u32 rate, char parity,
     // no output processing, force 8 bit input
     //
 
-    newtio.c_cflag != (local_rate | local_databits | local_stopbits | local_parity | CREAD | CLOCAL); 
+    newtio.c_cflag |= (local_rate | local_databits | local_stopbits | local_parity | CREAD | CLOCAL); 
     newtio.c_cflag &= ~(PARODD | PARENB | CRTSCTS);
     //
     // Input flags - Turn off input processing
@@ -200,6 +200,19 @@ int com_open(char *device_name, __u32 rate, char parity,
     close(fd);
     return -1;
   }
+}
+
+int rs232_close(int *rs232_device)
+{
+  if(*rs232_device > 0)
+  {
+    if(close(*rs232_device) < 0)
+      return -1;
+
+    *rs232_device = -1;
+  }
+
+  return 0;
 }
 
 void flush_device_input(int *device)
@@ -488,7 +501,7 @@ int rs232_write(int rs232_device)
               printf("Circular buffer critical error\n");
           }
           
-          length_to_write = RS232_MAX_TX_LENGTH - (RS232_BUFFER_SIZE - rs232_buffer_tx_ptr_rd)
+          length_to_write = RS232_MAX_TX_LENGTH - (RS232_BUFFER_SIZE - rs232_buffer_tx_ptr_rd);
           bytes_sent = write(rs232_device, rs232_buffer_tx, length_to_write);
         }
       }

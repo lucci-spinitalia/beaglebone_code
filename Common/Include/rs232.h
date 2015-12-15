@@ -11,7 +11,8 @@ extern unsigned char rs232_buffer_tx_full;
 extern unsigned char rs232_buffer_rx_empty;
 extern unsigned char rs232_buffer_rx_full;
 
-int com_open(char *device_name, __u32 rate, char parity, int data_bits, int stop_bits);
+int rs232_open(char *device_name, __u32 rate, char parity, int data_bits, int stop_bits);
+int rs232_close(int *rs232_device);
 
 void flush_device_input(int *);
 void flush_device_output(int *);
