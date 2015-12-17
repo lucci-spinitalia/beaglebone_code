@@ -1,0 +1,8 @@
+#!/bin/bash
+LIBNAME="socudp"
+FILENAME="socket_udp"
+
+rm *.o
+arm-linux-gnueabi-gcc -Wall -c "$FILENAME".c -I../../Include
+ar -cvq libbgl"$LIBNAME".a "$FILENAME".o
+mv libbgl"$LIBNAME".a ../../Lib

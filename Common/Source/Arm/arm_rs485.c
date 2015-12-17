@@ -620,7 +620,6 @@ int arm_rs485_read(int device)
   {
     bytes_read = read(device, rs485_buffer_rx_temp, arm_rs485_buffer_rx_get_space());
   
-    int i;
     if(bytes_read <= 0)
     {
       printf("rx space: %d, ptr write: %d, ptr read: %d, count: %d, full: %d\n", arm_rs485_buffer_rx_get_space(), arm_rs485_buffer_rx_ptr_wr, arm_rs485_buffer_rx_ptr_rd,
@@ -633,6 +632,7 @@ int arm_rs485_read(int device)
     }
     /*else
     {
+      int i;
       printf("data: ");
       for(i = 0; i < bytes_read; i++)
         printf("%x ", rs485_buffer_rx_temp[i]);
@@ -701,7 +701,7 @@ int arm_rs485_write(int device, int *query_link, unsigned char *request_position
       bytes_to_send = strlen(arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command);
     else
     {
-      // nel conto dei caratteri ce n'è uno in più (il primo) che indica l'indirizzo del motore
+      // nel conto dei caratteri ce n'ï¿½ uno in piï¿½ (il primo) che indica l'indirizzo del motore
       switch(arm_rs485_buffer_tx[arm_rs485_buffer_tx_ptr_rd].arm_command_param.command[1])
       {
         case 0xFA:
@@ -808,7 +808,7 @@ int arm_set_command_without_value(int index, char *command)
       buffer.arm_command_param.request_interpolation_status = 1;
       buffer.arm_command_param.request_error_status = 0;
     }
-    else if(strncmp(command, "RVT", strlen("RVT")) == 0)
+    else if(strncmp(command, "R", strlen("R")) == 0)
     {
       buffer.arm_command_param.request_position = 0;
       buffer.arm_command_param.request_trajectory_status = 0;
@@ -1103,8 +1103,8 @@ int arm_init(int index, long kp, long ki, long kl, long kd, long kv, long adt, l
 	
   if(arm_set_command(index, "VT", 0) <= 0) //set velocity target
     return -1;
-  
-  if(arm_set_command(index, "MV", 0) <= 0) //set velocity mode
+
+  if(arm_set_command_without_value(index, "MV") <= 0) //set velocity mode
     return -1;
     
   if(arm_set_command(index, "AMPS", amps) <= 0) // set pwm drive signal limit
@@ -1154,6 +1154,15 @@ int arm_init(int index, long kp, long ki, long kl, long kd, long kv, long adt, l
 
   if(arm_set_command_without_value(0, "BRKSRV") <= 0)	//release brake only with servo active 
     return -1;
+
+  if(arm_set_command_without_value(0, "G") <= 0) //set position mode
+    return -1;
+
+  if(arm_set_command_without_value(0, "X") <= 0) //set position mode
+      return -1;
+
+  if(arm_set_command_without_value(0, "OFF") <= 0) //set position mode
+      return -1;
 
   return 1;
 }
@@ -1722,7 +1731,7 @@ int arm_automatic_motion_xyz_start(char *motion_file)
   int return_value;
   float motor_position_target[MOTOR_NUMBER];
   float yz_position_target[3];
-  float max_yz_range;
+  //float max_yz_range;
   long motor_step[MOTOR_NUMBER];
         
   if(motion_file != NULL)
@@ -1916,8 +1925,6 @@ int arm_automatic_motion_xyz_start(char *motion_file)
       {
         if(motion_file != NULL)
           arm_link[i].position_target = arm_link[i].actual_position;
-        else
-          arm_link[i].position_target = arm_link[i].position_target;
       }
       else
         arm_link[i].position_target = (long)motor_position_target[i];

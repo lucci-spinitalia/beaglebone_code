@@ -1,0 +1,7 @@
+#!/bin/bash
+LIBNAME="rover"
+
+rm *.o
+arm-linux-gnueabihf-gcc -Wall -c *.c -I../../Include
+ar -cvq libbgl"$LIBNAME"hf.a *.o
+mv libbgl"$LIBNAME"hf.a ../../Lib

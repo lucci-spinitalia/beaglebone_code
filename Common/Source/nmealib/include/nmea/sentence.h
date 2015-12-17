@@ -32,7 +32,8 @@ enum nmeaPACKTYPE  // ADD: add packets type definition here
     GPVTG   = 0x0010,   /**< VTG - Actual track made good and speed over ground. */
     HCHDG   = 0x0020,   /**< HDG - Heading, Deviation and Variation. */
     TIROT   = 0x0040,   /**< ROT - Rate of Turn */
-    YXXDR   = 0x0080    /**< XDR - Trasducer Measurements */
+    YXXDR   = 0x0080,    /**< XDR - Trasducer Measurements */
+    HCHDT   = 0x0100    /**< HDT - Heading reference to true north */
 };
 
 // ADD: Add typedef here
@@ -131,6 +132,15 @@ typedef struct _nmeaHCHDG
     double mag_variation; /**< Magnetic variation (degrees) */
     char ew_variation;    /**< [E]ast or [W]est */
 } nmeaHCHDG;
+
+/**
+ * HDT packet information structure (Heading, )
+ */
+typedef struct _nmeaHCHDT
+{
+    double direction;   /**< Heading respect to true north (degrees) */
+    char t_flag;    /**< static text [T] */
+} nmeaHCHDT;
 
 /**
  * ROT packet information structure (Rate of Turn)

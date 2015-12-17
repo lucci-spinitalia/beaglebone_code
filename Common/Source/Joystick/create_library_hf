@@ -1,0 +1,8 @@
+#!/bin/bash
+LIBNAME="joy"
+FILENAME="joystick"
+
+rm *.o
+arm-linux-gnueabihf-gcc -Wall -c "$FILENAME".c -I../../Include
+ar -cvq libbgl"$LIBNAME"hf.a "$FILENAME".o
+mv libbgl"$LIBNAME"hf.a ../../Lib

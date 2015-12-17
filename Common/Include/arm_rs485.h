@@ -11,28 +11,28 @@
 
 #define ARM_RS485_BUFFER_SIZE 1024
 
-#define ARM_PARK_FILE "static_position"
-#define ARM_DINAMIC_FILE "dinamic_position"
-#define ARM_READY_FILE "ready_position"
-#define ARM_GET_BOX1_FILE "box1_get_position"
-#define ARM_GET_BOX2_FILE "box2_get_position"
-#define ARM_GET_BOX3_FILE "box3_get_position"
-#define ARM_GET_BOX4_FILE "box4_get_position"
-#define ARM_GET_BOX5_FILE "box5_get_position"
-#define ARM_GET_BOX6_FILE "box6_get_position"
-#define ARM_GET_BOX7_FILE "box7_get_position"
-#define ARM_PUT_BOX1_FILE "box1_put_position"
-#define ARM_PUT_BOX2_FILE "box2_put_position"
-#define ARM_PUT_BOX3_FILE "box3_put_position"
-#define ARM_PUT_BOX4_FILE "box4_put_position"
-#define ARM_PUT_BOX5_FILE "box5_put_position"
-#define ARM_PUT_BOX6_FILE "box6_put_position"
-#define ARM_PUT_BOX7_FILE "box7_put_position"
-#define ARM_PARK_CLASSA_FILE "park_position"
-#define ARM_STEP_FILE "step_position"
-#define ARM_GEAR_FILE "gear"
-#define ARM_LINK_LENGTH_FILE "link_length"
-#define ARM_GET_OUT_FROM_REST_FILE "get_out_from_rest"
+#define ARM_PARK_FILE "/opt/spinitalia/default_position/static_position"
+#define ARM_DINAMIC_FILE "/opt/spinitalia/default_position/dinamic_position"
+#define ARM_READY_FILE "/opt/spinitalia/default_position/ready_position"
+#define ARM_GET_BOX1_FILE "/opt/spinitalia/default_position/box1_get_position"
+#define ARM_GET_BOX2_FILE "/opt/spinitalia/default_position/box2_get_position"
+#define ARM_GET_BOX3_FILE "/opt/spinitalia/default_position/box3_get_position"
+#define ARM_GET_BOX4_FILE "/opt/spinitalia/default_position/box4_get_position"
+#define ARM_GET_BOX5_FILE "/opt/spinitalia/default_position/box5_get_position"
+#define ARM_GET_BOX6_FILE "/opt/spinitalia/default_position/box6_get_position"
+#define ARM_GET_BOX7_FILE "/opt/spinitalia/default_position/box7_get_position"
+#define ARM_PUT_BOX1_FILE "/opt/spinitalia/default_position/box1_put_position"
+#define ARM_PUT_BOX2_FILE "/opt/spinitalia/default_position/box2_put_position"
+#define ARM_PUT_BOX3_FILE "/opt/spinitalia/default_position/box3_put_position"
+#define ARM_PUT_BOX4_FILE "/opt/spinitalia/default_position/box4_put_position"
+#define ARM_PUT_BOX5_FILE "/opt/spinitalia/default_position/box5_put_position"
+#define ARM_PUT_BOX6_FILE "/opt/spinitalia/default_position/box6_put_position"
+#define ARM_PUT_BOX7_FILE "/opt/spinitalia/default_position/box7_put_position"
+#define ARM_PARK_CLASSA_FILE "/opt/spinitalia/default_position/park_position"
+#define ARM_STEP_FILE "/opt/spinitalia/default_position/step_position"
+#define ARM_GEAR_FILE "/opt/spinitalia/config/gear"
+#define ARM_LINK_LENGTH_FILE "/opt/spinitalia/config/link_length"
+#define ARM_GET_OUT_FROM_REST_FILE "/opt/spinitalia/default_position/get_out_from_rest"
 
 #define ARM_CMD_FIRST_TRIPLET  0x0001
 #define ARM_CMD_SECOND_TRIPLET 0x0002
@@ -191,4 +191,6 @@ __u16 arm_compute_crc_table_value(__u16);
 __u16 arm_crc_calculate_crc_16(__u16, __u8);
 unsigned char arm_crc_byte_buffer_crc_is_valid(__u8 *, __u32);
 void arm_crc_compute_byte_buffer_crc(__u8 *, __u32);
+
+int arm_give_a_shit(void);
 #endif

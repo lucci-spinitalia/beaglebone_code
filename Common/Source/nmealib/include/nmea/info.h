@@ -102,6 +102,7 @@ typedef struct _nmeaINFO
     double magnetic_sensor_heading; /**< Magnetic sensor heading [degree] */
     double magnetic_sensor_deviation; /**< Magnetic sensor deviation in EDEG - +/-[degree] */
     double magnetic_sensor_variation; /**< Magnetic sensor variation in EDEG - +/-[degree] */
+    double magnetic_sensor_heading_true; /**< Magnetic sensor heading [degree] respet true north */
     double rate_turn;                 /**< Rate of turn [degree/minute] */
     double pitch_osc;                 /**< Oscillation of vessel about its latitudinal axis [degree] */
     double roll_osc;                  /**< Oscillation of vessel about its longitudinal axis [degree] */

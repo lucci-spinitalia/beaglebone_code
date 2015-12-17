@@ -1,0 +1,7 @@
+#!/bin/bash
+LIBNAME="nmea"
+
+rm *.o
+arm-linux-gnueabi-gcc -Wall -c *.c -I../include
+ar -cvq libbgl"$LIBNAME".a *.o
+mv libbgl"$LIBNAME".a ../../../Lib

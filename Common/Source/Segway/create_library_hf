@@ -1,0 +1,9 @@
+#!/bin/bash
+LIBNAME="segwayudp"
+FILENAME="segway_udp_v2"
+FILENAME2="segway_config"
+
+rm *.o
+arm-linux-gnueabihf-gcc -Wall -c "$FILENAME".c "$FILENAME2".c -I../../Include
+ar -cvq libbgl"$LIBNAME"hf.a "$FILENAME".o "$FILENAME2".o
+mv libbgl"$LIBNAME"hf.a ../../Lib
