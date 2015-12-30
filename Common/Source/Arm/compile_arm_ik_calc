@@ -1,0 +1,5 @@
+#!/bin/bash
+SOURCE="/home/lucciu/beaglebone_code/Common/Source"
+INCLUDE="/home/lucciu/beaglebone_code/Common/Include"
+
+gcc -Wall $SOURCE/Arm/arm_ik_calc.c $SOURCE/Arm/arm_rs485.c -o arm_ik_calc.o -I$INCLUDE -lm

@@ -1,7 +1,9 @@
 #ifndef ARM_RS485_H_
 #define ARM_RS485_H_
 
-#define MOTOR_NUMBER 7
+#include <linux/types.h>
+
+#define MOTOR_NUMBER 6
 #define SMART_MOTOR_NUMBER 6
 #define SMART_MOTOR_SYNC_INDEX 1
 #define LINK5_SLN -253440
@@ -69,56 +71,58 @@
 #define LINK_TIMEOUT_LIMIT 10
 
 struct arm_rs485_frame
-{
-  union
   {
-    struct
-    {
-      unsigned char index;
-      char command[58];
-      
-      __u8 request_position;
-      __u8 request_trajectory_status;
-      __u8 request_interpolation_status;
-      __u8 request_error_status;
-      __u8 request_mode;
-      
-      //__u16 interpolation_status;
-    } arm_command_param;
+    union
+      {
+        struct
+          {
+            unsigned char index;
+            char command[58];
 
-    char arm_command[64];
+            __u8 request_position;
+            __u8 request_trajectory_status;
+            __u8 request_interpolation_status;
+            __u8 request_error_status;
+            __u8 request_mode;
+
+          //__u16 interpolation_status;
+          } arm_command_param;
+
+        char arm_command[64];
+      };
   };
-};
 
 struct arm_info
-{
-  __u32 velocity_target_limit;
-  long velocity_target;
-  long actual_position;
-  __u8 position_initialized; //0: not initialize  1: initialize
-  __u8 trajectory_status; //0: done 1: in progress
-  
-  long position_target;  // target position in motor step
-  unsigned int timeout_counter;
-  
-  // Interpolation param
-  __u8 slots;
-  __u8 pending_g;
-  __u8 ip_ready;
-  __u8 invalid_time_delta;
-  __u8 invalid_position_delta;
-  __u8 md_ready;
-  __u8 data_buffer_overflow;
-  __u8 data_buffer_underflow;
-  __u8 md_running;
-  
-  // Fix param
-  unsigned int link_length;  //link's length in mm
-  long link_offset_x;  //offset along x axis
-  long link_offset_y;   //offset along y axis
-  long link_offset_z;   //offset along z axis
-  long gear;
-};
+  {
+    __u32 velocity_target_limit;
+    float angle_upper_limit;
+    float angle_lower_limit;
+    long velocity_target;
+    long actual_position;
+    __u8 position_initialized; //0: not initialize  1: initialize
+    __u8 trajectory_status; //0: done 1: in progress
+
+    long position_target;  // target position in motor step
+    unsigned int timeout_counter;
+
+    // Interpolation param
+    __u8 slots;
+    __u8 pending_g;
+    __u8 ip_ready;
+    __u8 invalid_time_delta;
+    __u8 invalid_position_delta;
+    __u8 md_ready;
+    __u8 data_buffer_overflow;
+    __u8 data_buffer_underflow;
+    __u8 md_running;
+
+    // Fix param
+    unsigned int link_length;  //link's length in mm
+    long link_offset_x;  //offset along x axis
+    long link_offset_y;   //offset along y axis
+    long link_offset_z;   //offset along z axis
+    long gear;
+  };
 
 extern const float arm_encoder_factor;
 
@@ -145,8 +149,9 @@ void arm_rs485_flush_buffer_tx(void);
 int arm_rs485_buffer_tx_get_space(void);
 int arm_rs485_buffer_rx_get_space(void);
 int arm_rs485_load_tx(struct arm_rs485_frame data);
-int arm_rs485_write(int device, int *query_link, unsigned char *request_position, unsigned char *request_trajectory_status, 
-                    unsigned char *request_interpolation_status, unsigned char *request_error_status);
+int arm_rs485_write(int device, int *query_link, unsigned char *request_position,
+    unsigned char *request_trajectory_status, unsigned char *request_interpolation_status,
+    unsigned char *request_error_status);
 int arm_rs485_get_last_message_write(struct arm_rs485_frame *arm_rs485_buffer);
 int arm_rs485_unload_interpolation(unsigned char *data);
 int arm_rs485_unload_rx(unsigned char *data);
@@ -154,7 +159,8 @@ int arm_rs485_unload_rx_filtered(char *data, char token);
 int arm_rs485_unload_rx_multifiltered(char *data, char *token, char token_number);
 int arm_rs485_read(int rs232_device);
 
-int arm_init(int index, long kp, long ki, long kl, long kd, long kv, long adt, long vt, long amps);
+int arm_init(int index, long kp, long ki, long kl, long kd, long kv, long adt, long vt, long amps,
+    float upper_limit[], float lower_limit[]);
 void arm_set_max_velocity(int index, long velocity);
 //int arm_start(void);
 int arm_start_xyz(void);
