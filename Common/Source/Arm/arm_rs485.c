@@ -830,8 +830,18 @@ int arm_set_command_without_value(int index, char *command)
 
   if(index == 0)
   {
-    index_start = 1;
-    index_end = MOTOR_NUMBER;
+    // Se non è un messaggio di richiesta, posso inviarlo
+    // in broadcast senza preoccuparmi di conflitti sul bus
+    if((command[0] != 'R') && (command[0] != 'Q'))
+    {
+      index_start = 0;
+      index_end = 0;
+    }
+    else
+    {
+      index_start = 1;
+      index_end = MOTOR_NUMBER;
+    }
   }
   else
   {
@@ -839,6 +849,8 @@ int arm_set_command_without_value(int index, char *command)
     index_end = index;
   }
 
+  // Ci sono dei comandi che possono essere inviati in broadcast senza
+  // problemi di conflitti, come quelli che non prevedono una risposta
   for(i = index_start; i <= index_end; i++)
   {
     buffer.arm_command_param.index = i;
@@ -888,9 +900,10 @@ int arm_set_command_without_value(int index, char *command)
 
     sprintf(buffer.arm_command_param.command, "%c%s%c%c", i + 128, command, 0x0d, 0);
 
-    if(arm_link[i - 1].timeout_counter < LINK_TIMEOUT_LIMIT)
+    if(i == 0)
       bytes_sent = arm_rs485_load_tx(buffer);
-
+    else if(arm_link[i - 1].timeout_counter < LINK_TIMEOUT_LIMIT)
+      bytes_sent = arm_rs485_load_tx(buffer);
   }
 
   return bytes_sent;
@@ -909,7 +922,7 @@ int arm_set_command(int index, char *command, long value)
   buffer.arm_command_param.request_interpolation_status = 0;
   buffer.arm_command_param.request_error_status = 0;
 
-  if(arm_link[index].timeout_counter < LINK_TIMEOUT_LIMIT)
+  if(arm_link[index - 1].timeout_counter < LINK_TIMEOUT_LIMIT)
     bytes_sent = arm_rs485_load_tx(buffer);
 
   return bytes_sent;
@@ -931,14 +944,6 @@ int actuator_request_position()
   bytes_sent = arm_rs485_load_tx(buffer);
 
   return bytes_sent;
-}
-
-void actuator_get_status(struct arm_info *arm_link)
-{
-  if(actuator_last_action == 1) //open
-    arm_link->actual_position = 1;
-  else if(actuator_last_action == 2) //close
-    arm_link->actual_position = 0;
 }
 
 int actuator_request_trajectory()
@@ -980,28 +985,26 @@ int actuator_set_command(long command)
 
   switch(actuator_last_action)
   {
-    case 0: //stop
-      printf("ACTUATOR STOP\n");
+    case 0:
+      //printf("ACTUATOR STOP\n");
       if(arm_set_command(7, "PT", 0) <= 0)
         return -1;
       break;
 
-    case 1: //open
-      printf("ACTUATOR OPENING\n");
+    case 1:
+      //printf("ACTUATOR OPENING\n");
       if(arm_set_command(7, "PT", 1) <= 0)
         return -1;
-
-      arm_link[MOTOR_NUMBER - 1].trajectory_status = 1;
       break;
 
-    case 2: //close
-      printf("ACTUATOR CLOSING\n");
+    case 2:
+      //printf("ACTUATOR CLOSING\n");
       if(arm_set_command(7, "PT", 2) <= 0)
         return -1;
       break;
 
     default:
-      printf("ACTUATOR STOP DEFAULT\n");
+      //printf("ACTUATOR STOP DEFAULT\n");
       if(arm_set_command(7, "PT", 0) <= 0)
         return -1;
       break;
@@ -1035,20 +1038,13 @@ int arm_init(int index, long kp, long ki, long kl, long kd, long kv, long adt, l
         arm_link[i].position_initialized = 0;
         arm_link[i].timeout_counter = 0;
       }
-
-      arm_link[MOTOR_NUMBER - 1].actual_position = 1;
     }
     else
     {
       arm_link[index - 1].gear = gear[index - 1];
       arm_link[index - 1].position_initialized = 0;
       arm_link[index - 1].timeout_counter = 0;
-
-      if(index == MOTOR_NUMBER)
-        arm_link[index - 1].actual_position = 1;
     }
-
-    arm_link[-1].actual_position = 1;
   }
   else
     return -1;
@@ -1137,16 +1133,11 @@ int arm_init(int index, long kp, long ki, long kl, long kd, long kv, long adt, l
       arm_link[i].velocity_target_limit = arm_link[i].gear * vt;
       arm_link[i].velocity_target = 0;
     }
-
-    arm_link[MOTOR_NUMBER - 1].actual_position = 1;
   }
   else
   {
     arm_link[index - 1].velocity_target_limit = arm_link[index - 1].gear * vt;
     arm_link[index - 1].velocity_target = 0;
-
-    if(index == MOTOR_NUMBER)
-      arm_link[index - 1].actual_position = 1;
   }
 
   // If there's no pending request
@@ -1305,9 +1296,6 @@ int arm_start_xyz(void)
     //arm_link[i].timeout_counter = 0;
   }
 
-  if(MOTOR_NUMBER > SMART_MOTOR_NUMBER)
-    arm_link[MOTOR_NUMBER - 1].actual_position = 1;
-
   if(arm_set_command_without_value(0, "ZS") <= 0)	//Clear faults
     return -1;
 
@@ -1355,6 +1343,7 @@ int arm_start_xyz(void)
   if(arm_set_command(6, "VT", arm_link[5].velocity_target_limit) <= 0) //set velocity target
     return -1;
 
+  arm_set_command_without_value(0, "G");
   return 1;
 }
 
@@ -1365,9 +1354,12 @@ int arm_check_trajectory()
   // check if motor has been arrived to stop
   for(i = 0; i < MOTOR_NUMBER; i++)
   {
-    if(arm_link[i].trajectory_status > 0)
+    // Controllo se ha finito la tragliettoria solo se il link è attivo
+    if((arm_link[i].trajectory_status > 0) && (arm_link[i].timeout_counter < LINK_TIMEOUT_LIMIT))
       return 0;
 
+    // se sono arrivato all'ultimo motore, allora posso dire che le
+    // tragliettorie sono concluse
     if(i == (MOTOR_NUMBER - 1))
       return 1;
   }
@@ -1421,8 +1413,8 @@ int arm_move(unsigned char triplet_selected, float value1, float value2, float v
   switch(triplet_selected)
   {
     case 1:
-      for(i = 0; i < 3; i++)
-        arm_link[i].trajectory_status = 1;
+      /*for(i = 0; i < 3; i++)
+       arm_link[i].trajectory_status = 1;*/
 
       arm_set_command_without_value(0, "MV");
       arm_set_command_without_value(0, "SLD");
@@ -1439,8 +1431,8 @@ int arm_move(unsigned char triplet_selected, float value1, float value2, float v
 
     case 2:
       arm_set_command_without_value(0, "MV");
-      for(i = 3; i < 6; i++)
-        arm_link[i].trajectory_status = 1;
+      /*for(i = 3; i < 6; i++)
+       arm_link[i].trajectory_status = 1;*/
 
       //printf("Send VT Command\n");
       arm_set_command(4, "VT", (long) (value1 * arm_link[3].velocity_target_limit));
@@ -1466,8 +1458,8 @@ int arm_move(unsigned char triplet_selected, float value1, float value2, float v
       break;
 
     default:
-      for(i = 3; i < MOTOR_NUMBER; i++)
-        arm_link[i].trajectory_status = 1;
+      /*for(i = 3; i < MOTOR_NUMBER; i++)
+       arm_link[i].trajectory_status = 1;*/
 
       arm_set_command(0, "VT", 0);
       arm_set_command_without_value(0, "G");
@@ -1488,10 +1480,13 @@ int arm_move(unsigned char triplet_selected, float value1, float value2, float v
 int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, float value3)
 {
   int i;
-  float tetha0, tetha1, tetha2;
+  float tetha[MOTOR_NUMBER];
+  float x, y;
+  static float arm_length = 0;
+  long motor_step[3];
 
-  static double link_4_actual_position = M_PI_2;
   static double link_5_actual_position = M_PI_2;
+  static double link_6_actual_position = M_PI_2;
 
   /*Velocity convertion
    VT = Velocity *  ((enc. counts per rev.) / (sample rate)) * 65536 [rev/s]
@@ -1504,43 +1499,103 @@ int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, flo
   switch(triplet_selected)
   {
     case 1:
-      tetha0 = arm_link[0].actual_position * M_PI * arm_encoder_factor / (180 * arm_link[0].gear);
 
-      arm_ik_ang(0, value2, value3, &tetha0, &tetha1, &tetha2);
+      tetha[0] = arm_link[0].actual_position * M_PI * arm_encoder_factor / (180 * arm_link[0].gear);
 
       if(wrist_position_mode != 1)
       {
-        arm_start_xyz();
+        // la prima volta ho bisogno di calcolare la lunghezza del braccio
+        for(i = 0; i < 3; i++)
+          motor_step[i] = arm_link[i].actual_position;
+
+        arm_ee_xyz(motor_step, &x, &y, NULL);
+        arm_length = sqrt(pow(x, 2) + pow(y, 2));
+
+        arm_ik_ang(x, y, value3, &tetha[0], &tetha[1], &tetha[2]);
+
+        // Devo tener conto dei limiti di giunto e delle rotazioni possibili
+        for(i = 0; i < 3; i++)
+        {
+          if((tetha[i] < arm_link[i].angle_lower_limit)
+              && (tetha[i] > arm_link[i].angle_upper_limit))
+            arm_link[i].position_target = arm_link[i].actual_position;
+          else
+          {
+            if(tetha[i] < arm_link[i].angle_lower_limit)
+              tetha[i] += (2 * M_PI);
+
+            if(tetha[i] > arm_link[i].angle_upper_limit)
+              tetha[i] -= (2 * M_PI);
+          }
+
+          arm_link[i].position_target = (long) (tetha[i] * 180 * (double) arm_link[i].gear
+              / (M_PI * arm_encoder_factor));
+        }
 
         arm_set_command_without_value(1, "MV");
 
         wrist_position_mode = 1;
-        link_4_actual_position = arm_link[4].actual_position * M_PI * arm_encoder_factor
-            / (180 * arm_link[4].gear) - tetha1 - tetha2;
-        link_5_actual_position = arm_link[5].actual_position * M_PI * arm_encoder_factor
-            / (180 * arm_link[5].gear) - tetha0;
+        link_5_actual_position = arm_link[4].actual_position * M_PI * arm_encoder_factor
+            / (180 * arm_link[4].gear) - tetha[1] - tetha[2];
+        link_6_actual_position = arm_link[5].actual_position * M_PI * arm_encoder_factor
+            / (180 * arm_link[5].gear) - tetha[0];
         break;
       }
 
-      for(i = 0; i < 3; i++)
-        arm_link[i].trajectory_status = 1;
+      // la variabile value2, in questo caso, rappresenta l'incremento nell'estensione del braccio
+      arm_length += value2;
 
-      arm_link[4].trajectory_status = 1;
-      arm_link[5].trajectory_status = 1;
+      x = X12 * cos(tetha[0]) - arm_length * sin(tetha[0]);
+      y = X12 * sin(tetha[0]) + arm_length * cos(tetha[0]);
+
+      arm_ik_ang(x, y, value3, &tetha[0], &tetha[1], &tetha[2]);
+
+      // Devo tener conto dei limiti di giunto e delle rotazioni possibili
+      for(i = 0; i < 3; i++)
+      {
+        if((tetha[i] < arm_link[i].angle_lower_limit) && (tetha[i] > arm_link[i].angle_upper_limit))
+          arm_link[i].position_target = arm_link[i].actual_position;
+        else
+        {
+          if(tetha[i] < arm_link[i].angle_lower_limit)
+            tetha[i] += (2 * M_PI);
+
+          if(tetha[i] > arm_link[i].angle_upper_limit)
+            tetha[i] -= (2 * M_PI);
+        }
+
+        arm_link[i].position_target = (long) (tetha[i] * 180 * (double) arm_link[i].gear
+            / (M_PI * arm_encoder_factor));
+      }
 
       arm_set_command(1, "VT", (long) (value1 * arm_link[0].velocity_target_limit));
-      arm_set_command(2, "PT",
-          (long) (tetha1 * 180 * arm_link[1].gear / (M_PI * arm_encoder_factor)));
-      arm_set_command(3, "PT",
-          (long) (tetha2 * 180 * arm_link[2].gear / (M_PI * arm_encoder_factor)));
-      arm_set_command(5, "PT",
-          (long) ((link_4_actual_position + tetha1 + tetha2) * 180 * arm_link[4].gear
-              / (M_PI * arm_encoder_factor)));
-      arm_set_command(6, "PT",
-          (long) ((link_5_actual_position + tetha0) * 180 * arm_link[5].gear
-              / (M_PI * arm_encoder_factor)));
+      arm_set_command(2, "PT", arm_link[1].position_target);
 
-      //printf("2 %ld 3 %ld\n", (long)(tetha1 * 180 * arm_link[1].gear / (M_PI* arm_encoder_factor )), (long)(tetha2 * 180 * arm_link[2].gear / (M_PI * arm_encoder_factor)));
+      arm_set_command(3, "PT", arm_link[2].position_target);
+
+      tetha[4] = link_5_actual_position + tetha[1] + tetha[2];
+      tetha[5] = link_6_actual_position + tetha[0];
+
+      for(i = 3; i < SMART_MOTOR_NUMBER; i++)
+      {
+        if((tetha[i] < arm_link[i].angle_lower_limit) && (tetha[i] > arm_link[i].angle_upper_limit))
+          arm_link[i].position_target = arm_link[i].actual_position;
+        else
+        {
+          if(tetha[i] < arm_link[i].angle_lower_limit)
+            tetha[i] += (2 * M_PI);
+
+          if(tetha[i] > arm_link[i].angle_upper_limit)
+            tetha[i] -= (2 * M_PI);
+        }
+
+        arm_link[i].position_target = (long) (tetha[i] * 180 * (double) arm_link[i].gear
+            / (M_PI * arm_encoder_factor));
+      }
+
+      arm_set_command(5, "PT", arm_link[4].position_target);
+      arm_set_command(6, "PT", arm_link[5].position_target);
+
       arm_set_command_without_value(0, "G");
       arm_set_command(0, "c", 0);
       break;
@@ -1557,8 +1612,8 @@ int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, flo
         wrist_position_mode = 0;
       }
 
-      for(i = 3; i < 6; i++)
-        arm_link[i].trajectory_status = 1;
+      /*for(i = 3; i < 6; i++)
+       arm_link[i].trajectory_status = 1;*/
 
       //printf("Send VT Command\n");
       arm_set_command(4, "VT", (long) (value1 * arm_link[3].velocity_target_limit));
@@ -1584,8 +1639,8 @@ int arm_move_xyz(unsigned char triplet_selected, float value1, float value2, flo
       break;
 
     default:
-      for(i = 3; i < MOTOR_NUMBER; i++)
-        arm_link[i].trajectory_status = 1;
+      /*for(i = 3; i < MOTOR_NUMBER; i++)
+       arm_link[i].trajectory_status = 1;*/
 
       arm_set_command(0, "VT", 0);
       arm_set_command_without_value(0, "G");
@@ -1619,8 +1674,8 @@ int arm_query_trajectory(int link_to_query)
   {
     for(automatic_query = 1; automatic_query <= MOTOR_NUMBER; automatic_query++)
     {
-      if(arm_link[automatic_query - 1].trajectory_status > 0)
-        arm_set_command_without_value(automatic_query, "RB(0,2)");
+      //if(arm_link[automatic_query - 1].trajectory_status > 0)
+      arm_set_command_without_value(automatic_query, "RB(0,2)");
     }
   }
 
@@ -1689,7 +1744,7 @@ int arm_automatic_motion_xyz_start(char *motion_file)
   {
     for(i = 0; i < MOTOR_NUMBER; i++)
     {
-      arm_link[i].trajectory_status = 1;
+      //arm_link[i].trajectory_status = 1;
 
       if(motion_file != NULL)
         motor_step[i] = arm_link[i].actual_position;
@@ -1697,19 +1752,47 @@ int arm_automatic_motion_xyz_start(char *motion_file)
         motor_step[i] = arm_link[i].position_target;
     }
 
-    for(i = 0; i < 4; i++)
+    float arm_length = 0;
+    float x, y, tetha0;
+    for(i = 3; i >= 0; i--)
     {
-      // if read a "don't care" character
+      // Se leggo il carattere "don't care" ("x"), allora ho intenzione di mantenere
+      // uno dei parametri fissi. Però non si tratta di coordinate cartesiane, ma:
+      //  "don't care" sulla x -> angolo tetha0 fisso ed y rappresenta la lunghezza
+      //  "don't care" sulla y -> lunghezza proiettata sul piano xy fissa ed x rappresenta l'angolo
+      //  "don't care" sulla z -> z fissa
+      //  "don't care" sulla pinza -> pinza fissa nell'ultimo stato
       if(motor_position_target[i] != motor_position_target[i])
       {
         switch(i)
         {
           case 0:
-            arm_ee_xyz(motor_step, &motor_position_target[0], NULL, NULL);
+            arm_length = motor_position_target[1];
+            tetha0 = motor_step[0] * M_PI * arm_encoder_factor / (180 * arm_link[0].gear);
+
+            motor_position_target[0] = X12 * cos(tetha0) - arm_length * sin(tetha0);
+            motor_position_target[1] = X12 * sin(tetha0) + arm_length * cos(tetha0);
             break;
 
           case 1:
-            arm_ee_xyz(motor_step, NULL, &motor_position_target[1], NULL);
+            if(motor_position_target[0] != motor_position_target[0])
+            {
+              // se anche la prima coordinata è un don't care, mi basta
+              // inserire le coordinate correnti
+              arm_ee_xyz(motor_step, &motor_position_target[0], &motor_position_target[1], NULL);
+            }
+            else
+            {
+              // se il don't care è solo della coordinata y, allora devo mantenere
+              // invariata la lunghezza del braccio proiettato sul piano xy.
+              // In questo caso la coordinata x rappresenta l'angolo del giunto 1
+              arm_ee_xyz(motor_step, &x, &y, NULL);
+              arm_length = sqrt(pow(x, 2) + pow(y, 2));
+
+              tetha0 = motor_position_target[0];
+              motor_position_target[0] = X12 * cos(tetha0) - arm_length * sin(tetha0);
+              motor_position_target[1] = X12 * sin(tetha0) + arm_length * cos(tetha0);
+            }
             break;
 
           case 2:
@@ -1717,9 +1800,10 @@ int arm_automatic_motion_xyz_start(char *motion_file)
             break;
 
           case 3:
-            arm_link[6].position_target = arm_link[6].actual_position;
+            motor_position_target[3] = arm_link[6].actual_position;
             break;
         }
+
       }
     }
 
@@ -1769,6 +1853,7 @@ int arm_automatic_motion_xyz_start(char *motion_file)
       arm_link[i].position_target = (long) (yz_position_target[i] * 180 * (double) arm_link[i].gear
           / (M_PI * arm_encoder_factor));
     }
+
     if(MOTOR_NUMBER > SMART_MOTOR_NUMBER)
       arm_link[6].position_target = (long) (motor_position_target[3]);
 
@@ -1778,7 +1863,7 @@ int arm_automatic_motion_xyz_start(char *motion_file)
   {
     for(i = 0; i < SMART_MOTOR_NUMBER; i++)
     {
-      arm_link[i].trajectory_status = 1;
+      //arm_link[i].trajectory_status = 1;
       if(motor_position_target[i] != motor_position_target[i])
       {
         if(motion_file != NULL)
@@ -1795,7 +1880,7 @@ int arm_automatic_motion_xyz_start(char *motion_file)
 
     if(return_value == MOTOR_NUMBER)
     {
-      arm_link[MOTOR_NUMBER - 1].trajectory_status = 1;
+      //arm_link[MOTOR_NUMBER - 1].trajectory_status = 1;
       if(motor_position_target[MOTOR_NUMBER - 1] != motor_position_target[MOTOR_NUMBER - 1])
         arm_link[MOTOR_NUMBER - 1].position_target = arm_link[MOTOR_NUMBER - 1].actual_position;
       else
@@ -1944,108 +2029,107 @@ void arm_automatic_motion_abort()
 /* At every call this function check if a motor have been arrived to
  position.
  */
-int arm_automatic_motion_xyz_update(int index)
-{
-  int i;
-  float motor_position_target[3];
+/*int arm_automatic_motion_xyz_update(int index)
+ {
+ int i;
+ float motor_position_target[3];
 
-  if(index == 0)
-  {
-    if(arm_auto_motion_xyz_mode == 1)
-    {
-      // calculate final destination in xyz coordinates
-      arm_ee_tetha_xyz(0,
-          arm_link[1].position_target * arm_encoder_factor * M_PI / (arm_link[1].gear * 180),
-          arm_link[2].position_target * arm_encoder_factor * M_PI / (arm_link[2].gear * 180),
-          &motor_position_target[0], &motor_position_target[1], &motor_position_target[2]);
+ if(index == 0)
+ {
+ if(arm_auto_motion_xyz_mode == 1)
+ {
+ // calculate final destination in xyz coordinates
+ arm_ee_tetha_xyz(0,
+ arm_link[1].position_target * arm_encoder_factor * M_PI / (arm_link[1].gear * 180),
+ arm_link[2].position_target * arm_encoder_factor * M_PI / (arm_link[2].gear * 180),
+ &motor_position_target[0], &motor_position_target[1], &motor_position_target[2]);
 
-      if(((motor_position_target[1] - arm_incremental_step_automotion_y)
-          * arm_incremental_step_automotion_y_sign > 0)
-          || ((motor_position_target[2] - arm_incremental_step_automotion_z)
-              * arm_incremental_step_automotion_z_sign > 0))
-      {
-        if((motor_position_target[1] - arm_incremental_step_automotion_y)
-            * arm_incremental_step_automotion_y_sign > 0)
-          arm_incremental_step_automotion_y += arm_delta_y;
+ if(((motor_position_target[1] - arm_incremental_step_automotion_y)
+ * arm_incremental_step_automotion_y_sign > 0)
+ || ((motor_position_target[2] - arm_incremental_step_automotion_z)
+ * arm_incremental_step_automotion_z_sign > 0))
+ {
+ if((motor_position_target[1] - arm_incremental_step_automotion_y)
+ * arm_incremental_step_automotion_y_sign > 0)
+ arm_incremental_step_automotion_y += arm_delta_y;
 
-        if((motor_position_target[2] - arm_incremental_step_automotion_z)
-            * arm_incremental_step_automotion_z_sign > 0)
-          arm_incremental_step_automotion_z += arm_delta_z;
+ if((motor_position_target[2] - arm_incremental_step_automotion_z)
+ * arm_incremental_step_automotion_z_sign > 0)
+ arm_incremental_step_automotion_z += arm_delta_z;
 
-        // compute angles from current position plus delta
-        arm_ik_ang(0, arm_incremental_step_automotion_y, arm_incremental_step_automotion_z,
-            &motor_position_target[0], &motor_position_target[1], &motor_position_target[2]);
+ // compute angles from current position plus delta
+ arm_ik_ang(0, arm_incremental_step_automotion_y, arm_incremental_step_automotion_z,
+ &motor_position_target[0], &motor_position_target[1], &motor_position_target[2]);
 
-        // convert from radiant to step
-        motor_position_target[1] *= 180 * arm_link[1].gear / (M_PI * arm_encoder_factor);
-        motor_position_target[2] *= 180 * arm_link[2].gear / (M_PI * arm_encoder_factor);
+ // convert from radiant to step
+ motor_position_target[1] *= 180 * arm_link[1].gear / (M_PI * arm_encoder_factor);
+ motor_position_target[2] *= 180 * arm_link[2].gear / (M_PI * arm_encoder_factor);
 
-        arm_set_command(2, "PT", (long) motor_position_target[1]);
-        arm_set_command(3, "PT", (long) motor_position_target[2]);
+ arm_set_command(2, "PT", (long) motor_position_target[1]);
+ arm_set_command(3, "PT", (long) motor_position_target[2]);
 
-        arm_set_command_without_value(0, "G");
+ arm_set_command_without_value(0, "G");
 
-        return 0;
-      }
-      else
-      {
-        motor_position_target[1] = arm_link[1].position_target;
-        motor_position_target[2] = arm_link[2].position_target;
-      }
+ return 0;
+ }
+ else
+ {
+ motor_position_target[1] = arm_link[1].position_target;
+ motor_position_target[2] = arm_link[2].position_target;
+ }
 
-      /****** Checks if all joint have arrived to the final position ********/
-      for(i = 1; i < 4; i++)
-      {
-        if((arm_link[i - 1].actual_position
-            > (arm_link[i - 1].position_target
-                + (long) (arm_link[i - 1].gear / (3 * arm_encoder_factor))))
-            || (arm_link[i - 1].actual_position
-                < (arm_link[i - 1].position_target
-                    - (long) (arm_link[i - 1].gear / (3 * arm_encoder_factor)))))
-        {
-          return 0;
-        }
-      }
-    }
-    else
-    {
-      for(i = 1; i < MOTOR_NUMBER; i++)
-      {
-        if((arm_link[i - 1].actual_position
-            > (arm_link[i - 1].position_target
-                + (long) (arm_link[i - 1].gear / (3 * arm_encoder_factor))))
-            || (arm_link[i - 1].actual_position
-                < (arm_link[i - 1].position_target
-                    - (long) (arm_link[i - 1].gear / (3 * arm_encoder_factor)))))
-        {
-          return 0;
-        }
-      }
-    }
+ for(i = 1; i < 4; i++)
+ {
+ if((arm_link[i - 1].actual_position
+ > (arm_link[i - 1].position_target
+ + (long) (arm_link[i - 1].gear / (3 * arm_encoder_factor))))
+ || (arm_link[i - 1].actual_position
+ < (arm_link[i - 1].position_target
+ - (long) (arm_link[i - 1].gear / (3 * arm_encoder_factor)))))
+ {
+ return 0;
+ }
+ }
+ }
+ else
+ {
+ for(i = 1; i < MOTOR_NUMBER; i++)
+ {
+ if((arm_link[i - 1].actual_position
+ > (arm_link[i - 1].position_target
+ + (long) (arm_link[i - 1].gear / (3 * arm_encoder_factor))))
+ || (arm_link[i - 1].actual_position
+ < (arm_link[i - 1].position_target
+ - (long) (arm_link[i - 1].gear / (3 * arm_encoder_factor)))))
+ {
+ return 0;
+ }
+ }
+ }
 
-    if(arm_link[MOTOR_NUMBER - 1].actual_position != 0)
-      return 0;
-  }
-  else
-  {
-    if(index != MOTOR_NUMBER)
-    {
-      if((arm_link[index - 1].actual_position
-          > (arm_link[index - 1].position_target
-              + (long) (arm_link[index - 1].gear / (3 * arm_encoder_factor))))
-          || (arm_link[index - 1].actual_position
-              < (arm_link[index - 1].position_target
-                  - (long) (arm_link[index - 1].gear / (3 * arm_encoder_factor)))))
-      {
-        return 0;
-      }
-    }
-    else if(arm_link[MOTOR_NUMBER - 1].actual_position != 0)
-      return 0;
-  }
+ if(arm_link[MOTOR_NUMBER - 1].actual_position != 0)
+ return 0;
+ }
+ else
+ {
+ if(index != MOTOR_NUMBER)
+ {
+ if((arm_link[index - 1].actual_position
+ > (arm_link[index - 1].position_target
+ + (long) (arm_link[index - 1].gear / (3 * arm_encoder_factor))))
+ || (arm_link[index - 1].actual_position
+ < (arm_link[index - 1].position_target
+ - (long) (arm_link[index - 1].gear / (3 * arm_encoder_factor)))))
+ {
+ return 0;
+ }
+ }
+ else if(arm_link[MOTOR_NUMBER - 1].actual_position != 0)
+ return 0;
+ }
 
-  return 1;
-}
+ return 1;
+ }*/
 
 int arm_read_path_step(const char *file_path, long *motor_position_target, int *cursor_position)
 {
@@ -2184,84 +2268,74 @@ void arm_ik_ang(float pw_x, float pw_y, float pw_z, float *Teta1, float *Teta2, 
   double c3;
   double s3;
 
-  const double x12 = 0.068; // � il disassamento con il giunto 3 e non solo con il 2
-  const double y12 = 0.155; // distanza tra l'asse del giunto 1 e quello del giunto 2
-  const double z12 = 0.098; // distanza tra l'asse del giunto 1 e quello del giunto 2
+  double teta_comp = asin(LENGTH_OFFSET * sin(TETHA_OFFSET) / sqrt(pow(pw_x, 2) + pow(pw_y, 2)));
 
-  const double a2 = 0.5; // 
-  const double a3 = 0.512; // distanza tra il gunto 3 ed il 5
-  const double wrist_size = 0.37677; // distanza tra il giunto 5 e la punta della pinza
-
-  double teta_offset = atan2(x12, y12);
-  double length_offset = sqrt(pow(x12, 2) + pow(y12, 2));
-
-  double teta_comp = asin(length_offset * sin(teta_offset) / sqrt(pow(pw_x, 2) + pow(pw_y, 2)));
-  //double arm_length = length_offset * sin(teta_offset - teta_comp) / sin(teta_comp);
-
-  *Teta1 = ((atan2(pw_x, pw_y) - teta_comp));
+  double tetha1 = ((atan2(pw_x, pw_y) - teta_comp));
+  //double arm_length = length_offset * sin(TETHA_OFFSET - teta_comp) / sin(teta_comp);
 
   // devo prima applicare la rotazione per Teta e poi traslare tutto per gli offset
   //double x = pw_x * cos(*Teta1) - pw_y * sin(*Teta1) - x12;
-  double y = pw_y * cos(*Teta1) + pw_x * sin(*Teta1) - y12;
-  double z = pw_z + wrist_size - z12;
+  double y = pw_y * cos(tetha1) + pw_x * sin(tetha1) - Y12;
+  double z = pw_z + WRIST_SIZE - Z12;
 
-  c3 = (pow(y, 2) + pow(z, 2) - pow(a2, 2) - pow(a3, 2)) / (2 * a2 * a3);
+  c3 = (pow(y, 2) + pow(z, 2) - pow(A2, 2) - pow(A3, 2)) / (2 * A2 * A3);
   s3 = -sqrt(1 - pow(c3, 2));
 
-  if(y >= 0)
-    *Teta3 = atan2(s3, c3);
-  else
-    *Teta3 = atan2(-s3, c3);
+  if(Teta3 != NULL)
+  {
+    if(y >= 0)
+      *Teta3 = atan2(s3, c3);
+    else
+      *Teta3 = atan2(-s3, c3);
+  }
 
-  s2 = ((a2 + a3 * c3) * z - a3 * s3 * y) / (pow(y, 2) + pow(z, 2));
-  c2 = ((a2 + a3 * c3) * y + a3 * s3 * z) / (pow(y, 2) + pow(z, 2));
+  if(Teta2 != NULL)
+  {
+    s2 = ((A2 + A3 * c3) * z - A3 * s3 * y) / (pow(y, 2) + pow(z, 2));
+    c2 = ((A2 + A3 * c3) * y + A3 * s3 * z) / (pow(y, 2) + pow(z, 2));
 
-  if(pw_y >= 0)
-    *Teta2 = atan2(s2, c2);
-  else
-    *Teta2 = atan2(s2, c2);
+    if(pw_y >= 0)
+      *Teta2 = atan2(s2, c2);
+    else
+      *Teta2 = atan2(s2, c2);
+  }
 
   // devo cambiare segno ed aggiungere/sottrarre 2 pi per aggiustare il verso di rotazione
   // che in questo caso rimane sempre lo stesso
-  if(pw_x < 0)
-    *Teta1 = -((atan2(pw_x, pw_y) - teta_comp) + 2 * M_PI);
-  else
-    *Teta1 = -((atan2(pw_x, pw_y) - teta_comp));
+  if(Teta1 != NULL)
+  {
+    if(pw_x < 0)
+      *Teta1 = -((atan2(pw_x, pw_y) - teta_comp) + 2 * M_PI);
+    else
+      *Teta1 = -((atan2(pw_x, pw_y) - teta_comp));
+  }
 }
 
 void arm_ee_xyz(long motor_step[], float *pw_x, float *pw_y, float *pw_z)
 {
-  const double x12 = 0.068; // � il disassamento con il giunto 3 e non solo con il 2
-  const double y12 = 0.155; // distanza tra l'asse del giunto 1 e quello del giunto 2
-  const double z12 = 0.098; // distanza tra l'asse del giunto 1 e quello del giunto 2
-
-  const double a2 = 0.5; //
-  const double a3 = 0.512; // distanza tra il gunto 3 ed il 5
-  const double wrist_size = 0.37677; // distanza tra il giunto 5 e la punta della pinza
-
-  double x, y, z;
+  double y, z;
   float q[3];
 
   q[0] = motor_step[0] * M_PI * arm_encoder_factor / (arm_link[0].gear * 180);
   q[1] = motor_step[1] * M_PI * arm_encoder_factor / (arm_link[1].gear * 180);
   q[2] = motor_step[2] * M_PI * arm_encoder_factor / (arm_link[2].gear * 180);
 
-  // calcolo le componenti considerando l'angolo teta 1 pari a zero
-  y = a2 * cos(q[1]) + a3 * cos(q[2] + q[1]);
-  z = a2 * sin(q[1]) + a3 * sin(q[1] + q[2]);
-  x = 0;
+  // calcolo le componenti considerando l'angolo teta 0 pari a zero
+  y = A2 * cos(q[1]) + A3 * cos(q[2] + q[1]);
+  z = A2 * sin(q[1]) + A3 * sin(q[1] + q[2]);
 
   // devo applicare una traslazione per gli offset
-  x += x12;
-  y += y12;
-  z += (z12 - wrist_size);
+  y += Y12;
+  z += (Z12 - WRIST_SIZE);
 
   // a questo punto posso applicare la rotazione lungo l'asse z
+  // la y, in questo punto, può essere anche vista come l'estensione del braccio
+  // sul piano xy
   if(pw_x != NULL)
-    *pw_x = x * cos(q[0]) - y * sin(q[0]);
+    *pw_x = X12 * cos(q[0]) - y * sin(q[0]);
 
   if(pw_y != NULL)
-    *pw_y = x * sin(q[0]) + y * cos(q[0]);
+    *pw_y = X12 * sin(q[0]) + y * cos(q[0]);
 
   if(pw_z != NULL)
     *pw_z = z;

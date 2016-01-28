@@ -3,13 +3,24 @@
 
 #include <linux/types.h>
 
-#define MOTOR_NUMBER 6
+#define MOTOR_NUMBER 7
 #define SMART_MOTOR_NUMBER 6
 #define SMART_MOTOR_SYNC_INDEX 1
 #define LINK5_SLN -253440
 #define LINK5_SLP 298496
 #define LINK6_SLN -844800
 #define LINK6_SLP 844800
+
+#define  X12 0.068 // � il disassamento con il giunto 3 e non solo con il 2
+#define Y12 0.155 // distanza tra l'asse del giunto 1 e quello del giunto 2
+#define Z12 0.098 // distanza tra l'asse del giunto 1 e quello del giunto 2
+
+#define A2 0.5 //
+#define A3 0.512 // distanza tra il gunto 3 ed il 5
+#define WRIST_SIZE 0.37677 // distanza tra il giunto 5 e la punta della pinza
+
+#define TETHA_OFFSET atan2(X12, Y12)
+#define LENGTH_OFFSET sqrt(pow(X12, 2) + pow(Y12, 2))
 
 #define ARM_RS485_BUFFER_SIZE 1024
 
