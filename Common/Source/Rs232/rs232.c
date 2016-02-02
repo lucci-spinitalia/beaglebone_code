@@ -28,6 +28,7 @@ void flush_device_output(int *);
 int rs232_load_tx(unsigned char *data, unsigned int data_length);
 int rs232_unload_rx(unsigned char *data);
 int rs232_unload_rx_filtered(char *data, char token);
+int rs232_unload_rx_multifiltered(char *data, char *token, char token_number);
 int rs232_write(int rs232_device);
 int rs232_read(int rs232_device);
 int rs232_buffer_tx_get_space(void);
@@ -48,6 +49,8 @@ unsigned char rs232_buffer_rx_empty = 1;
 unsigned char rs232_buffer_rx_full = 0;
 unsigned char rs232_buffer_rx_overrun = 0;
 unsigned int rs232_buffer_rx_data_count = 0;  // number of byte received
+
+int rs232_buffer_rx_bookmark = 0; /**< segna a che punto sono arrivato nella ricerca di un carattere nel buffer di ricezione */
 
 int rs232_open(char *device_name, __u32 rate, char parity,
              int data_bits, int stop_bits)
@@ -392,6 +395,156 @@ int rs232_unload_rx_filtered(char *data, char token)
   if((token_ptr != NULL) && ((token_ptr - rs232_buffer_rx_temp) <= length_to_write))
     //return -2;
    return strlen(rs232_buffer_rx_temp);
+  else
+    return length_to_write;
+}
+
+int rs232_unload_rx_multifiltered(char *data, char *token, char token_number)
+{
+  int length_to_write = 0;
+  char rs232_buffer_rx_temp[RS232_BUFFER_SIZE];
+
+  char *token_ptr[10];
+  char *token_winner = NULL;
+  char *null_character = NULL;
+  int token_count = 0;
+
+  if(rs232_buffer_rx_empty)
+    return 0;
+
+  if(token_number > 10)
+    return -1;
+
+  // it checks if bookmark arrives to the end and if it rolled up
+
+  // if the bookmark pass the buffer limit, then it must
+  // starts from the begginning
+  if(rs232_buffer_rx_bookmark >= RS232_BUFFER_SIZE)
+    rs232_buffer_rx_bookmark = rs232_buffer_rx_bookmark - RS232_BUFFER_SIZE;
+
+  // the bookmark must be less than write pointer
+  if(rs232_buffer_rx_bookmark == rs232_buffer_rx_ptr_wr)
+    return 0;
+
+  // if it doesn't roll up then it copy message into temp buffer
+  // else it copy the last part of the buffer and the first one until data
+  // length
+  if(rs232_buffer_rx_bookmark <= rs232_buffer_rx_ptr_wr)
+  {
+    length_to_write = rs232_buffer_rx_ptr_wr - rs232_buffer_rx_bookmark;
+    memcpy(rs232_buffer_rx_temp, &rs232_buffer_rx[rs232_buffer_rx_bookmark],
+        length_to_write);
+  }
+  else
+  {
+    length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_rx_bookmark);
+
+    memcpy(rs232_buffer_rx_temp, &rs232_buffer_rx[rs232_buffer_rx_bookmark],
+        length_to_write);
+    memcpy(&rs232_buffer_rx_temp[length_to_write], rs232_buffer_rx,
+        rs232_buffer_rx_ptr_wr + 1);
+
+    length_to_write = length_to_write + rs232_buffer_rx_ptr_wr + 1;
+  }
+
+  // imposto il limite per la ricerca del token
+  rs232_buffer_rx_temp[length_to_write] = '\0';
+
+  // it checks for null character into the string
+  // and replace it with 0x01 character.
+  null_character = strchr(rs232_buffer_rx_temp, '\0');
+  while(null_character != NULL)
+  {
+    if(null_character < &rs232_buffer_rx_temp[length_to_write])
+      *null_character = 1;
+    else
+      break;
+
+    null_character = strchr(rs232_buffer_rx_temp, '\0');
+  }
+
+  // it search for token
+  for(token_count = 0; token_count < token_number; token_count++)
+  {
+    token_ptr[token_count] = strchr(rs232_buffer_rx_temp, token[token_count]);
+
+    if(token_ptr[token_count] > token_winner)
+      token_winner = token_ptr[token_count];
+  }
+
+  if(token_winner == NULL)
+  {
+    rs232_buffer_rx_bookmark = rs232_buffer_rx_ptr_wr;
+    rs232_buffer_rx_empty = 1;
+
+    return 0;
+  }
+
+  rs232_buffer_rx_full = 0;
+
+  // Questa volta il controllo deve essere fatto sul token, perchè, anche se il
+  // puntatore di scrittura ha passato il limite, il token potrebbe essere ancora
+  // nella coda del buffer
+  if((rs232_buffer_rx_bookmark >= rs232_buffer_rx_ptr_rd)
+      && ((rs232_buffer_rx_ptr_rd + (token_winner - rs232_buffer_rx_temp + 1))
+          < RS232_BUFFER_SIZE))
+  {
+    length_to_write = (token_winner - rs232_buffer_rx_temp + 1)
+        + (rs232_buffer_rx_bookmark - rs232_buffer_rx_ptr_rd);
+    memcpy(data, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+  }
+  else
+  {
+    length_to_write = (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_rd);
+
+    memcpy(data, &rs232_buffer_rx[rs232_buffer_rx_ptr_rd], length_to_write);
+
+    if(rs232_buffer_rx_bookmark >= rs232_buffer_rx_ptr_rd)
+      length_to_write = (token_winner - rs232_buffer_rx_temp + 1)
+          + (rs232_buffer_rx_bookmark - rs232_buffer_rx_ptr_rd) - length_to_write;
+    else
+      length_to_write = (token_winner - rs232_buffer_rx_temp + 1) + rs232_buffer_rx_bookmark;
+
+    memcpy(&data[RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_rd], rs232_buffer_rx,
+        length_to_write);
+
+    length_to_write += (RS232_BUFFER_SIZE - rs232_buffer_rx_ptr_rd);
+  }
+
+  data[length_to_write - 1] = 0;
+
+  token_ptr[0] = strchr(data, '\377');
+
+  if(token_ptr[0] != NULL)
+  {
+    rs232_buffer_rx_temp[token_ptr[0] - rs232_buffer_rx_temp] = '\0';
+    strcat(rs232_buffer_rx_temp, &rs232_buffer_rx_temp[token_ptr[0] - rs232_buffer_rx_temp + 1]);
+
+    memcpy(data, rs232_buffer_rx_temp, strlen(rs232_buffer_rx_temp));
+
+    printf("Rs232 Frame error: %s\nat %i and long %i\n", rs232_buffer_rx_temp,
+        token_ptr[0] - rs232_buffer_rx_temp, strlen(rs232_buffer_rx_temp));
+  }
+
+  rs232_buffer_rx_data_count -= length_to_write;
+
+  if((rs232_buffer_rx_data_count < 0)
+      || (rs232_buffer_rx_data_count > RS232_BUFFER_SIZE))
+    rs232_buffer_rx_empty = 1;
+
+  if(rs232_buffer_rx_data_count == 0)
+    rs232_buffer_rx_empty = 1;
+
+  rs232_buffer_rx_ptr_rd += length_to_write;
+
+  if(rs232_buffer_rx_ptr_rd >= RS232_BUFFER_SIZE)
+    rs232_buffer_rx_ptr_rd -= RS232_BUFFER_SIZE;
+
+  rs232_buffer_rx_bookmark = rs232_buffer_rx_ptr_rd;
+
+  if((token_ptr[0] != NULL) && ((token_ptr[0] - rs232_buffer_rx_temp) <= length_to_write))
+    //return -2;
+    return strlen(rs232_buffer_rx_temp);
   else
     return length_to_write;
 }
