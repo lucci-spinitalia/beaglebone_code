@@ -17,7 +17,8 @@
 #define TRUE 1
 
 /* Prototype */
-int rs232_open(char *, __u32, char, int, int, int);
+int rs232_open(char *, __u32 , char ,
+             int , int , char , char , int );
 
 void flush_device_input(int *);
 void flush_device_output(int *);
@@ -61,13 +62,18 @@ int device_number = 0;
  *  parity: carattere che indica l'uso del controllo di parità. I valori ammessi sono:
  *        N, O, E
  *  data_bits: intero che indica il numero di bit per frame. Sono ammessi numeri da 5 a 8
- *  stop_bits: numero di bit di stop frame. Può esserre 1 o 2
+ *  stop_bits: numero di bit di stop frame. Può essere 1 o 2
+ *  mark_error: se viene passato un valore maggiore di 0, imposta la segnalazione di un
+ *              frame error o parity error (vedi PARMRK).
+ *  translate_cr: se maggiore di zero, converte il carattere CarriegeReturn in NewLine
+ *  device_index: indice da assegnare al dispositivo. Deve essere unico, maggiore di zero
+ *                 progressivo e minore di RS232_DEVICE_NUM
  *
  * Output: Numero del descrittore del file rappresentante la seriale
  *
  */
 int rs232_open(char *device_name, __u32 rate, char parity,
-             int data_bits, int stop_bits, int device_index)
+             int data_bits, int stop_bits, char mark_error, char translate_cr, int device_index)
 {
   int fd;
   int local_rate = 0;
@@ -77,7 +83,7 @@ int rs232_open(char *device_name, __u32 rate, char parity,
   char upper_parity;
   struct termios oldtio, newtio;
 
-  if((device_index < 0) || (device_index > device_number))
+  if((device_index < 0) || (device_index > device_number) || (device_index >= RS232_DEVICE_NUM))
     return -1;
 
   // Init circular buffer
@@ -175,12 +181,25 @@ int rs232_open(char *device_name, __u32 rate, char parity,
     // no input parity check, don't strip high bit off,
     // no XON/XOFF software flow control
     //
-    //newtio.c_iflag &= ~(IGNBRK | BRKINT | IGNPAR | INPCK | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON | IXOFF);
-    newtio.c_iflag &= ~(IGNPAR | IGNBRK | ICRNL | INLCR |
-                        ISTRIP | IXON | IXOFF | IXANY | IGNCR);
+    /*newtio.c_iflag &= ~(IGNPAR | IGNBRK | ICRNL | INLCR |
+                        ISTRIP | IXON | IXOFF | IXANY | IGNCR);*/
+    newtio.c_iflag &= ~(IGNPAR | IGNBRK | INLCR |
+                            ISTRIP | IXON | IXOFF | IXANY | IGNCR);
     
-    newtio.c_iflag |= (BRKINT | PARMRK | INPCK);
+
+    /*newtio.c_iflag |= (BRKINT | PARMRK | INPCK);*/
+    newtio.c_iflag |= (BRKINT | INPCK);
     
+    if(mark_error > 0)
+      newtio.c_iflag |= (PARMRK);
+    else
+      newtio.c_iflag &= ~(PARMRK);
+
+    if(translate_cr > 0)
+      newtio.c_iflag |= (ICRNL);
+    else
+      newtio.c_iflag &= ~(ICRNL);
+
     //
     // Output flags - Turn off output processing
     // no CR to NL translation, no NL to CR-NL translation,

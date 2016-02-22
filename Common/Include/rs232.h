@@ -14,7 +14,8 @@ extern unsigned char rs232_buffer_rx_empty[RS232_DEVICE_NUM];
 extern unsigned char rs232_buffer_rx_full[RS232_DEVICE_NUM];
 extern unsigned char rs232_buffer_rx_overrun[RS232_DEVICE_NUM];
 
-int rs232_open(char *device_name, __u32 rate, char parity, int data_bits, int stop_bits, int device_index);
+int rs232_open(char *device_name, __u32 rate, char parity,
+             int data_bits, int stop_bits, char mark_error, char translate_cr, int device_index);
 int rs232_close(int *rs232_device);
 
 void flush_device_input(int *);
