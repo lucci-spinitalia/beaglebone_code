@@ -11,6 +11,7 @@
 #define lms511_start_measure()          (lms511_send_command("LMCstartmeas"))
 #define lms511_query_status()           (lms511_send_command("sRN STlms"))
 #define lms511_scan_request()           (lms511_send_command("sRN LMDscandata"))
+#define lms511_scan_auto()		          (lms511_send_command("sEN LMDscandata 1"))
 
 /* lms511 state */
 #define LMS511_UNDEFINED 0
@@ -29,13 +30,20 @@ extern struct LMS511_INFO lms511_info;
 
 struct LMS511_INFO
 {
+  /*config*/
+  int error;
+  unsigned long scanning_frequency;
+  unsigned long angle_resolution;
+  long starting_angle;
+  long stopping_angle;
+
+  /*data*/
   unsigned char state;
   unsigned char temperature_range_met;
   unsigned long scaling_factor;
-  long starting_angle;
   int angular_step;
   unsigned int spot_number;
-  
+
   struct
   {
     unsigned int spot_number;
@@ -55,5 +63,7 @@ int lms511_init();
 void lms511_dispose();
 int lms511_parse(int socket_lms511);
 int lms511_send_command(char *command);
+int lms511_config_set(long scanning_freq, long angle_resolution, long starting_angle,
+    long stopping_angle);
 
 #endif
