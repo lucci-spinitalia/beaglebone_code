@@ -162,7 +162,6 @@ int lms511_unload_rx_multifiltered(char *data, char *token, char token_number)
   char *null_character = NULL;
   int token_count = 0;
 
-
   if(lms511_buffer_rx_empty)
     return 0;
 
@@ -186,17 +185,14 @@ int lms511_unload_rx_multifiltered(char *data, char *token, char token_number)
   if(lms511_buffer_rx_bookmark <= lms511_buffer_rx_ptr_wr)
   {
     length_to_write = lms511_buffer_rx_ptr_wr - lms511_buffer_rx_bookmark;
-    memcpy(lms511_buffer_rx_temp, &lms511_buffer_rx[lms511_buffer_rx_bookmark],
-        length_to_write);
+    memcpy(lms511_buffer_rx_temp, &lms511_buffer_rx[lms511_buffer_rx_bookmark], length_to_write);
   }
   else
   {
     length_to_write = (LMS511_BUFFER_SIZE - lms511_buffer_rx_bookmark);
 
-    memcpy(lms511_buffer_rx_temp, &lms511_buffer_rx[lms511_buffer_rx_bookmark],
-        length_to_write);
-    memcpy(&lms511_buffer_rx_temp[length_to_write], lms511_buffer_rx,
-        lms511_buffer_rx_ptr_wr + 1);
+    memcpy(lms511_buffer_rx_temp, &lms511_buffer_rx[lms511_buffer_rx_bookmark], length_to_write);
+    memcpy(&lms511_buffer_rx_temp[length_to_write], lms511_buffer_rx, lms511_buffer_rx_ptr_wr + 1);
 
     length_to_write = length_to_write + lms511_buffer_rx_ptr_wr + 1;
   }
@@ -259,8 +255,7 @@ int lms511_unload_rx_multifiltered(char *data, char *token, char token_number)
     else
       length_to_write = (token_winner - lms511_buffer_rx_temp + 1) + lms511_buffer_rx_bookmark;
 
-    memcpy(&data[LMS511_BUFFER_SIZE - lms511_buffer_rx_ptr_rd], lms511_buffer_rx,
-        length_to_write);
+    memcpy(&data[LMS511_BUFFER_SIZE - lms511_buffer_rx_ptr_rd], lms511_buffer_rx, length_to_write);
 
     length_to_write += (LMS511_BUFFER_SIZE - lms511_buffer_rx_ptr_rd);
   }
@@ -282,8 +277,7 @@ int lms511_unload_rx_multifiltered(char *data, char *token, char token_number)
 
   lms511_buffer_rx_data_count -= length_to_write;
 
-  if((lms511_buffer_rx_data_count < 0)
-      || (lms511_buffer_rx_data_count > LMS511_BUFFER_SIZE))
+  if((lms511_buffer_rx_data_count < 0) || (lms511_buffer_rx_data_count > LMS511_BUFFER_SIZE))
     lms511_buffer_rx_empty = 1;
 
   if(lms511_buffer_rx_data_count == 0)
@@ -487,6 +481,45 @@ int lms511_init()
 }
 
 /***
+ * Converte il frame di risposta ad una richiesta di intervallo di scansione.
+ *
+ * Input:
+ *  lms511_command_token: puntatore alla stringa contenente i dati
+ *  lms511_info: struttura dove memorizzare i dati tradotti
+ *
+ */
+void lms511_parse_outputrange(char *lms511_command_token, struct LMS511_INFO *lms511_info)
+{
+  char lms511_value_count;
+  char *lms511_value_token;
+
+  // skip text
+  lms511_command_token += sizeof("sRA LMPoutputRange");
+
+  //printf("Scandata: %s\n", lms511_command_token);
+  lms511_value_count = 0;
+
+  while((lms511_value_token = strchr(lms511_command_token, ' ')) != NULL)
+  {
+    *lms511_value_token = '\0';
+
+    switch(lms511_value_count)
+    {
+      case 2: //starting angle
+        sscanf(lms511_command_token, "%lx", &lms511_info->starting_angle);
+        break;
+    }
+
+    lms511_value_count++;
+    lms511_command_token += (lms511_value_token - lms511_command_token + 1);
+  }
+
+  // L'ultimo valore rimasto è ancora buono
+  sscanf(lms511_command_token, "%lx", &lms511_info->stopping_angle);
+
+}
+
+/***
  * Converte il frame di risposta ad una richiesta di configurazione in dati.
  *
  * Input:
@@ -613,7 +646,7 @@ int lms511_parse_data(char *lms511_command_token, struct LMS511_INFO *lms511_inf
           if(lms511_value_token != NULL)
           {
             *lms511_value_token = '\0';
-            sscanf(lms511_command_token, "%x", &lms511_info->data.spot[lms511_count]);
+            sscanf(lms511_command_token, "%lx", &lms511_info->data.spot[lms511_count]);
 
             lms511_info->data.spot[lms511_count] *= convert_to_float(lms511_info->scaling_factor);
             lms511_value_count++;
@@ -635,7 +668,23 @@ int lms511_parse_data(char *lms511_command_token, struct LMS511_INFO *lms511_inf
   return 0;
 }
 
-int lms511_parse(int socket_lms511)
+
+/***
+ * Filtra i messaggi ricevuti dal socket e li smista alle funzioni per la loro traduzione.
+ *
+ * Ingresso:
+ *   socket_lms511: descrittore del socket
+ *   type: char dove memorizzare il tipo di messaggio tradotto
+ *      0: nessun messaggio tradotto
+ *      1: messaggio dati (sRA LMDscandata o sSN LMDscandata)
+ *      2: risposta sRA STlms
+ *      3: risposta sAN mLMPsetscancfg
+ *      4: risposta sRA LMPoutputRange
+ *
+ * Uscita:
+ *   Numero di byte processati
+ */
+int lms511_parse(int socket_lms511, char *type)
 {
   int bytes_read; // to check how many bytes has been read
   char lms511_buffer[LMS511_BUFFER_SIZE];
@@ -651,12 +700,13 @@ int lms511_parse(int socket_lms511)
   lms511_endline[0] = LMS511_ENDLINE;
   lms511_endline[1] = '\0';
 
+  *type = 0;
+
   bytes_read = lms511_read(socket_lms511);
 
   if(bytes_read > 0)
   {
     bytes_read = lms511_unload_rx_multifiltered(lms511_buffer, lms511_endline, 1);
-    //bytes_read = lms511_unload_rx_filtered(lms511_buffer, lms511_endline[0]);
 
     if(bytes_read > 0)
     {
@@ -683,6 +733,9 @@ int lms511_parse(int socket_lms511)
             lms511_value_token += 2;
             lms511_info.temperature_range_met = atoi(lms511_value_token);
             //printf("Temperature range: %d\n", lms511_info.temperature_range_met);
+
+            if(type != NULL)
+              *type = 2;
           }
 
           /* searching for sRA LMDscandata message */
@@ -690,14 +743,24 @@ int lms511_parse(int socket_lms511)
           lms511_command_token = strstr(lms511_message_buffer, "sRA LMDscandata ");
 
           if(lms511_command_token != NULL)
+          {
             lms511_parse_data(lms511_command_token, &lms511_info);
+
+            if(type != NULL)
+              *type = 1;
+          }
 
           /* searching for sSN LMDscandata message */
           strcpy(lms511_message_buffer, lms511_message_token);
           lms511_command_token = strstr(lms511_message_buffer, "sSN LMDscandata ");
 
           if(lms511_command_token != NULL)
+          {
             lms511_parse_data(lms511_command_token, &lms511_info);
+
+            if(type != NULL)
+              *type = 1;
+          }
 
           /* searching for sSN LMDscandata message */
           strcpy(lms511_message_buffer, lms511_message_token);
@@ -707,10 +770,25 @@ int lms511_parse(int socket_lms511)
           {
             lms511_parse_config(lms511_command_token, &lms511_info);
 
-            printf(
-                "Configuration data acquire\n\terror: %d\n\tfrequency: %ld\n\tresolution: %ld\n\tstart: %ld\n\tstop: %ld\n",
-                lms511_info.error, lms511_info.scanning_frequency, lms511_info.angle_resolution,
-                lms511_info.starting_angle, lms511_info.stopping_angle);
+            printf("Configuration data acquire\n\terror: %d\n\tfrequency: %ld\n\tresolution: %ld\n",
+                lms511_info.error, lms511_info.scanning_frequency, lms511_info.angle_resolution);
+
+            if(type != NULL)
+              *type = 3;
+          }
+
+          strcpy(lms511_message_buffer, lms511_message_token);
+          lms511_command_token = strstr(lms511_message_buffer, "sRA LMPoutputRange ");
+
+          if(lms511_command_token != NULL)
+          {
+            lms511_parse_outputrange(lms511_command_token, &lms511_info);
+
+            printf("\tstart: %ld\n\tstop: %ld\n", lms511_info.starting_angle,
+                lms511_info.stopping_angle);
+
+            if(type != NULL)
+              *type = 4;
           }
         }
 
@@ -804,13 +882,53 @@ int lms511_config_set(long scanning_freq, long angle_resolution, long starting_a
 
   char buffer[128];
 
+  sprintf(buffer, "sWN LMPoutputRange 1 %lx %lx %lx", angle_resolution, starting_angle,
+      stopping_angle);
+
+  if(lms511_send_command(buffer) <= 0)
+    return -2;
+
   sprintf(buffer, "sMN mLMPsetscancfg %+ld +1 %+ld %+ld %+ld", scanning_freq, angle_resolution,
       starting_angle, stopping_angle);
 
-  if(lms511_send_command(buffer) > 0)
-    return 0;
-  else
+  if(lms511_send_command(buffer) <= 0)
     return -2;
+
+  return 0;
+}
+
+int lms511_range_set(long angle_resolution, long starting_angle, long stopping_angle)
+{
+  switch(angle_resolution)
+  {
+    case 1667:
+    case 2500:
+    case 3333:
+    case 5000:
+    case 6667:
+    case 10000:
+      break;
+
+    default:
+      return -1;
+      break;
+  }
+
+  if((starting_angle < -50000) || (starting_angle > 1850000))
+    return -1;
+
+  if((stopping_angle < -50000) || (stopping_angle > 1850000))
+    return -1;
+
+  char buffer[128];
+
+  sprintf(buffer, "sWN LMPoutputRange 1 %lx %lx %lx", angle_resolution, starting_angle,
+      stopping_angle);
+
+  if(lms511_send_command(buffer) <= 0)
+    return -2;
+
+  return 0;
 }
 
 /*void signal_handler(int signum)

@@ -3,6 +3,6 @@ LIBNAME="gps"
 FILENAME="gps_generate"
 
 rm *.o
-arm-linux-gnueabi-gcc -Wall -c "$FILENAME".c -I../../Include
+arm-linux-gnueabi-gcc -Wall -c "$FILENAME".c -I../../Include -Lm
 ar -cvq libbgl"$LIBNAME".a "$FILENAME".o
 mv libbgl"$LIBNAME".a ../../Lib

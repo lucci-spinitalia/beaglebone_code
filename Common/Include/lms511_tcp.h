@@ -5,6 +5,7 @@
 
 /* MACRO */
 #define lms511_config_request()         (lms511_send_command("sRN LMPscancfg"))
+#define lms511_outrange_request()       (lms511_send_command("sRN LMPoutputRange"))
 #define lms511_login_as_manteinance()   (lms511_send_command("sMN SetAccessMode 02 B21ACE26"))
 #define lms511_login_as_auth_client()   (lms511_send_command("sMN SetAccessMode 03 F4724744"))
 #define lms511_logout()                 (lms511_send_command("sMN Run"))
@@ -47,7 +48,7 @@ struct LMS511_INFO
   struct
   {
     unsigned int spot_number;
-    unsigned int *spot;
+    unsigned long *spot;
   } data;
 };
 
@@ -61,9 +62,10 @@ int lms511_send(int device, struct sockaddr_in *dest_address);
 int lms511_read(int device);
 int lms511_init();
 void lms511_dispose();
-int lms511_parse(int socket_lms511);
+int lms511_parse(int socket_lms511, char *type);
 int lms511_send_command(char *command);
 int lms511_config_set(long scanning_freq, long angle_resolution, long starting_angle,
     long stopping_angle);
+int lms511_range_set(long angle_resolution, long starting_angle, long stopping_angle);
 
 #endif
