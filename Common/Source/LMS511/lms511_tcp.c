@@ -584,7 +584,7 @@ int lms511_parse_config(char *lms511_command_token, struct LMS511_INFO *lms511_i
 
 int lms511_parse_data(char *lms511_command_token, struct LMS511_INFO *lms511_info)
 {
-  char lms511_value_count;
+  int lms511_value_count;
   char *lms511_value_token;
 
   // skip text
@@ -657,9 +657,11 @@ int lms511_parse_data(char *lms511_command_token, struct LMS511_INFO *lms511_inf
             break;
           }
         }
-
         break;
     }
+
+    if(lms511_value_token == NULL)
+      break;
 
     lms511_value_count++;
     lms511_command_token += (lms511_value_token - lms511_command_token + 1);

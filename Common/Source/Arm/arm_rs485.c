@@ -2268,6 +2268,11 @@ void arm_ik_ang(float pw_x, float pw_y, float pw_z, float *Teta1, float *Teta2, 
   double c3;
   double s3;
 
+  // Se i parametri d'ingresso sono uguale a zero, allora restituisco gli angoli
+  // attuali
+  if((pw_x == 0) && (pw_y == 0))
+    goto invalid_value;
+
   double teta_comp = asin(LENGTH_OFFSET * sin(TETHA_OFFSET) / sqrt(pow(pw_x, 2) + pow(pw_y, 2)));
 
   double tetha1 = ((atan2(pw_x, pw_y) - teta_comp));
@@ -2279,6 +2284,10 @@ void arm_ik_ang(float pw_x, float pw_y, float pw_z, float *Teta1, float *Teta2, 
   double z = pw_z + WRIST_SIZE - Z12;
 
   c3 = (pow(y, 2) + pow(z, 2) - pow(A2, 2) - pow(A3, 2)) / (2 * A2 * A3);
+
+  if((c3 > 1) || (c3 < -1))
+    goto invalid_value;
+
   s3 = -sqrt(1 - pow(c3, 2));
 
   if(Teta3 != NULL)
@@ -2309,6 +2318,20 @@ void arm_ik_ang(float pw_x, float pw_y, float pw_z, float *Teta1, float *Teta2, 
     else
       *Teta1 = -((atan2(pw_x, pw_y) - teta_comp));
   }
+
+  return;
+
+  invalid_value:
+  if(Teta1 != NULL)
+    *Teta1 = arm_link[0].actual_position * M_PI * arm_encoder_factor / (arm_link[0].gear * 180);
+
+  if(Teta2 != NULL)
+    *Teta2 = arm_link[1].actual_position * M_PI * arm_encoder_factor / (arm_link[1].gear * 180);
+
+  if(Teta3 != NULL)
+    *Teta3 = arm_link[2].actual_position * M_PI * arm_encoder_factor / (arm_link[2].gear * 180);
+
+  return;
 }
 
 void arm_ee_xyz(long motor_step[], float *pw_x, float *pw_y, float *pw_z)

@@ -11,7 +11,7 @@
 #define LINK6_SLN -844800
 #define LINK6_SLP 844800
 
-#define  X12 0.068 // � il disassamento con il giunto 3 e non solo con il 2
+#define X12 0.068 // � il disassamento con il giunto 3 e non solo con il 2
 #define Y12 0.155 // distanza tra l'asse del giunto 1 e quello del giunto 2
 #define Z12 0.098 // distanza tra l'asse del giunto 1 e quello del giunto 2
 
@@ -79,7 +79,7 @@
 #define CRC_TABLE_SIZE 256
 #define INITIAL_CRC (0)
 
-#define LINK_TIMEOUT_LIMIT 10
+#define LINK_TIMEOUT_LIMIT 100
 
 struct arm_rs485_frame
   {

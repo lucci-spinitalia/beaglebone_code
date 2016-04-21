@@ -8,6 +8,58 @@
 
 volatile int STOP = 0;
 
+int gpio_export(int pin_number)
+{
+  FILE *file = NULL;
+
+  file = fopen("/sys/class/gpio/export", "a");
+
+  if(file == NULL)
+    return -1;
+
+  fprintf(file, "%i", pin_number);
+
+  fclose(file);
+  return 1;
+}
+
+int gpio_set_value(int pin_number, int value)
+{
+  FILE *file = NULL;
+  char file_path[64];
+
+  sprintf(file_path, "/sys/class/gpio/gpio%i/value", pin_number);
+  file = fopen(file_path, "a");
+
+  if(file == NULL)
+    return -1;
+
+  fprintf(file, "%i", value);
+
+  fclose(file);
+  return 1;
+}
+
+int gpio_set_direction(int pin_number, int value)
+{
+  FILE *file = NULL;
+  char file_path[64];
+
+  sprintf(file_path, "/sys/class/gpio/gpio%i/direction", pin_number);
+  file = fopen(file_path, "a");
+
+  if(file == NULL)
+    return -1;
+
+  if(value)
+    fprintf(file, "in");
+  else
+    fprintf(file, "out");
+
+  fclose(file);
+  return 1;
+}
+
 int main()
 {
   int status = 0;
@@ -17,36 +69,39 @@ int main()
   char buf[255];
   
   // set gpio as input pulled down
-  printf("Setting gpio as input\n");
+  /*printf("Setting gpio as input\n");
   sprintf(buf, "echo 27 > /sys/kernel/debug/omap_mux/gpmc_ad12");
   if(system(buf) < 0)
-    perror("setting gpio as input");
+    perror("setting gpio as input");*/
   
   // export gpio
   printf("Export gpio\n");
-  sprintf(buf, "echo %i > /sys/class/gpio/export", SYS_5V);
-  if(system(buf) < 0)
-    perror("export gpio");
+
+  gpio_export(SYS_5V);
+  gpio_set_direction(SYS_5V, 1);
 	
   // set gpio as output
   printf("Setting gpio as input\n");
-  sprintf(buf, "echo 17 > /sys/kernel/debug/omap_mux/gpmc_ad13");
+  /*sprintf(buf, "echo 17 > /sys/kernel/debug/omap_mux/gpmc_ad13");
   if(system(buf) < 0)
-    perror("setting gpio as output");
+    perror("setting gpio as output");*/
   
   // export gpio
   printf("Export gpio\n");
-  sprintf(buf, "echo %i > /sys/class/gpio/export", SYS_ENABLE);
+  gpio_export(SYS_ENABLE);
+  gpio_set_direction(SYS_ENABLE, 0);
+  /*sprintf(buf, "echo %i > /sys/class/gpio/export", SYS_ENABLE);
   if(system(buf) < 0)
-    perror("export gpio");
+    perror("export gpio");*/
 
   select_timeout.tv_sec = 0;
   select_timeout.tv_usec = 500000;
 
   // Enable battery
-  sprintf(buf, "echo 1 > /sys/class/gpio/gpio%i/value", SYS_ENABLE);
+  /*sprintf(buf, "echo 1 > /sys/class/gpio/gpio%i/value", SYS_ENABLE);
   if(system(buf) < 0)
-    perror("enable power");
+    perror("enable power");*/
+  gpio_set_value(SYS_ENABLE, 1);
 	
   while(STOP == 0)
   {
